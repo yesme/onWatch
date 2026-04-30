@@ -236,6 +236,7 @@ func runMenubarCommand() error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+	resolveAutoDetectedTokens(cfg, logger)
 	logger.Info("Menubar runtime starting", "pid", os.Getpid(), "port", cfg.Port, "db_path", cfg.DBPath, "test_mode", cfg.TestMode)
 
 	db, err := store.New(cfg.DBPath)
