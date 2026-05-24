@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/hub"
 )
 
 //go:embed templates/*.html
@@ -105,6 +107,16 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	mux.HandleFunc(p("/api/alerts/dismiss"), handler.DismissAlert)
 	mux.HandleFunc(p("/api/alerts/dismiss-all"), handler.DismissAllAlerts)
 	mux.HandleFunc(p("/api/alerts/simulate"), handler.SimulateAlert)
+
+	// Agent sync endpoints (bearer token auth, no session required)
+	agentSyncHandler := hub.AgentAuthMiddleware(handler.store, http.HandlerFunc(handler.AgentSync))
+	agentHeartbeatHandler := hub.AgentAuthMiddleware(handler.store, http.HandlerFunc(handler.AgentHeartbeat))
+	mux.Handle(p("/api/v1/agent/sync"), agentSyncHandler)
+	mux.Handle(p("/api/v1/agent/heartbeat"), agentHeartbeatHandler)
+
+	// Agent management endpoints (dashboard session auth)
+	mux.HandleFunc(p("/api/v1/admin/agents"), handler.AdminAgents)
+	mux.HandleFunc(p("/api/v1/admin/tokens"), handler.AdminTokens)
 
 	// Prometheus metrics endpoint (public, with bearer token auth)
 	if handler.metrics != nil {
@@ -246,12 +258,14 @@ func gzipHandler(next http.Handler) http.Handler {
 func csrfMiddleware(next http.Handler, basePath string) http.Handler {
 	loginPath := basePath + "/login"
 	logoutPath := basePath + "/logout"
+	agentAPIPrefix := basePath + "/api/v1/agent/"
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
 			// Exempt form-based auth endpoints from CSRF header check.
 			// These are protected by session cookies with SameSite=Strict instead.
+			// Agent API endpoints use bearer tokens (not cookies) so CSRF is inapplicable.
 			path := r.URL.Path
-			if path != loginPath && path != logoutPath {
+			if path != loginPath && path != logoutPath && !strings.HasPrefix(path, agentAPIPrefix) {
 				if r.Header.Get("X-Requested-With") == "" {
 					http.Error(w, "missing required header", http.StatusForbidden)
 					return

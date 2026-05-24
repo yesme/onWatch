@@ -468,6 +468,9 @@ func run() error {
 		}
 		return runMenubarCommand()
 	}
+	if hasCommand("token") {
+		return runTokenCommand()
+	}
 	if hasCommand("stop", "--stop") {
 		return runStop(testMode)
 	}

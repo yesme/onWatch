@@ -256,6 +256,13 @@ func sessionAuthMiddlewareWithBasePath(sessions *SessionStore, basePath string, 
 				return
 			}
 
+			// Agent sync endpoints use bearer token auth (handled by hub.AgentAuthMiddleware),
+			// not session cookies. Bypass session auth for these paths.
+			if strings.HasPrefix(path, basePath+"/api/v1/agent/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Check session cookie first
 			if cookie, err := r.Cookie(sessionCookieName); err == nil {
 				if sessions.ValidateToken(cookie.Value) {

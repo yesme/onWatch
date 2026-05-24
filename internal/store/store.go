@@ -699,6 +699,65 @@ func (s *Store) createTables() error {
 			partial_line TEXT NOT NULL DEFAULT '',
 			updated_at TEXT NOT NULL
 		);
+
+		CREATE TABLE IF NOT EXISTS agent_tokens (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			token_hash TEXT NOT NULL UNIQUE,
+			token_prefix TEXT NOT NULL,
+			name TEXT NOT NULL,
+			owner TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			expires_at TEXT,
+			last_used_at TEXT,
+			revoked_at TEXT,
+			scopes TEXT NOT NULL DEFAULT 'sync'
+		);
+		CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash);
+
+		CREATE TABLE IF NOT EXISTS agents (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id TEXT NOT NULL UNIQUE,
+			token_id INTEGER NOT NULL REFERENCES agent_tokens(id),
+			name TEXT NOT NULL DEFAULT '',
+			hostname TEXT NOT NULL DEFAULT '',
+			os TEXT NOT NULL DEFAULT '',
+			arch TEXT NOT NULL DEFAULT '',
+			agent_version TEXT NOT NULL DEFAULT '',
+			first_seen_at TEXT NOT NULL,
+			last_seen_at TEXT NOT NULL,
+			providers TEXT NOT NULL DEFAULT '[]',
+			status TEXT NOT NULL DEFAULT 'active'
+		);
+		CREATE INDEX IF NOT EXISTS idx_agents_token_id ON agents(token_id);
+
+		CREATE TABLE IF NOT EXISTS agent_credentials (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id INTEGER NOT NULL REFERENCES agents(id),
+			provider TEXT NOT NULL,
+			account_name TEXT NOT NULL DEFAULT '',
+			credential_type TEXT NOT NULL,
+			encrypted_data TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			expires_at TEXT,
+			UNIQUE(agent_id, provider, account_name)
+		);
+
+		CREATE TABLE IF NOT EXISTS agent_cost_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_id INTEGER NOT NULL REFERENCES agents(id),
+			provider TEXT NOT NULL,
+			date TEXT NOT NULL,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+			cost_usd REAL NOT NULL DEFAULT 0,
+			sessions_count INTEGER NOT NULL DEFAULT 0,
+			models_used TEXT NOT NULL DEFAULT '[]',
+			model_breakdowns TEXT NOT NULL DEFAULT '[]',
+			updated_at TEXT NOT NULL,
+			UNIQUE(agent_id, provider, date)
+		);
 	`
 
 	if _, err := s.db.Exec(schema); err != nil {

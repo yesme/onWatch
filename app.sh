@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION=$(cat "$SCRIPT_DIR/VERSION")
 BINARY="onwatch"
+AGENT_BINARY="onwatch-agent"
 DARWIN_FULL_TAGS="menubar,desktop,production"
 DARWIN_CGO_LDFLAGS="-framework UniformTypeIdentifiers -Wl,-no_warn_duplicate_libraries"
 
@@ -169,6 +170,7 @@ do_deps() {
 do_clean() {
     info "Cleaning build artifacts..."
     rm -f "$SCRIPT_DIR/$BINARY"
+    rm -f "$SCRIPT_DIR/$AGENT_BINARY"
     rm -f "$SCRIPT_DIR/coverage.out" "$SCRIPT_DIR/coverage.html"
     rm -rf "$SCRIPT_DIR/dist/"
     go clean -testcache
@@ -179,6 +181,10 @@ do_build() {
     info "Building onWatch v${VERSION}..."
     build_native_binary "$SCRIPT_DIR/$BINARY"
     success "Built ./$BINARY ($(du -h "$BINARY" | cut -f1 | xargs))"
+
+    info "Building onwatch-agent v${VERSION}..."
+    build_agent_binary "$SCRIPT_DIR/$AGENT_BINARY"
+    success "Built ./$AGENT_BINARY ($(du -h "$AGENT_BINARY" | cut -f1 | xargs))"
 }
 
 build_native_binary() {
@@ -198,6 +204,16 @@ build_native_binary() {
         -o "$output" .
 }
 
+build_agent_binary() {
+    local output="$1"
+    cd "$SCRIPT_DIR"
+
+    # Agent is always CGO_ENABLED=0 - no SQLite, no menubar, no embedded assets
+    CGO_ENABLED=0 go build \
+        -ldflags="-s -w -X main.version=$VERSION" \
+        -o "$output" ./cmd/onwatch-agent/
+}
+
 build_darwin() {
     cd "$SCRIPT_DIR"
     if [[ "$(uname)" != "Darwin" ]]; then
@@ -213,6 +229,12 @@ build_darwin() {
             -tags "$DARWIN_FULL_TAGS" \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
+
+        local agent_output="dist/onwatch-agent-darwin-${arch}"
+        info "Building ${agent_output}..."
+        CGO_ENABLED=0 GOOS=darwin GOARCH="$arch" go build \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$SCRIPT_DIR/$agent_output" ./cmd/onwatch-agent/
     done
 
     success "Built macOS binaries in dist/"
@@ -269,6 +291,12 @@ do_release() {
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
             -ldflags="-s -w -X main.version=$VERSION" \
             -o "$SCRIPT_DIR/$output" .
+
+        local agent_output="dist/onwatch-agent-${os}-${arch}${ext}"
+        info "  Building ${agent_output}..."
+        CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+            -ldflags="-s -w -X main.version=$VERSION" \
+            -o "$SCRIPT_DIR/$agent_output" ./cmd/onwatch-agent/
     done
 
     success "Release build complete. Binaries in dist/:"
