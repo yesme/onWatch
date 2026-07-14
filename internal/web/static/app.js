@@ -9881,13 +9881,19 @@ async function populateMenubarProviderOrder() {
   const visibleSet = new Set(explicitVisible);
   const showAll = visibleSet.size === 0;
 
+  const tabLabels = State.dashboardProviderLabels && typeof State.dashboardProviderLabels === 'object'
+    ? State.dashboardProviderLabels
+    : {};
   list.innerHTML = providers.map(provider => {
     const visible = showAll || visibleSet.has(provider.key);
+    // Prefer dashboard tab rename (base key) so menubar settings match tabs.
+    const baseKey = String(provider.key || '').split(':')[0];
+    const displayName = (tabLabels[baseKey] || tabLabels[provider.key] || provider.name || baseKey);
     return `
     <li class="menubar-order-item ${provider.dashboardVisible ? '' : 'is-disabled'} ${visible ? '' : 'is-hidden'}" draggable="true" tabindex="0" data-provider="${provider.key}">
       <div class="menubar-order-handle" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="menubar-order-copy">
-        <span class="menubar-order-name">${provider.name}</span>
+        <span class="menubar-order-name">${escapeHTML(displayName)}</span>
         <span class="menubar-order-meta">${provider.meta}</span>
       </div>
       <div class="menubar-order-controls">
