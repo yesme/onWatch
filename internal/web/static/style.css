@@ -265,7 +265,8 @@ button, input, select { font-family: inherit; }
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 12px;
   padding: 14px 28px;
   background: var(--surface-card);
   border-bottom: 1px solid var(--border-default);
@@ -273,6 +274,8 @@ button, input, select { font-family: inherit; }
   top: 0;
   z-index: 10;
   box-shadow: var(--shadow-xs);
+  /* Keep chrome visible when many/long provider tab labels are present. */
+  min-width: 0;
 }
 
 .header-brand {
@@ -282,6 +285,7 @@ button, input, select { font-family: inherit; }
   text-decoration: none;
   cursor: pointer;
   transition: opacity var(--transition-fast);
+  flex-shrink: 0;
 }
 .header-brand:hover { opacity: 0.8; }
 
@@ -305,7 +309,13 @@ button, input, select { font-family: inherit; }
   background: var(--surface-inset);
   padding: 3px;
   border-radius: var(--radius-sm);
-  margin-left: 16px;
+  margin-left: 4px;
+  /* Absorb extra width; scroll when custom labels make tabs wider than the header. */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .provider-tab {
   padding: 6px 16px;
@@ -318,6 +328,7 @@ button, input, select { font-family: inherit; }
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .provider-tab:hover {
   color: var(--text-primary);
@@ -337,12 +348,23 @@ button, input, select { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
+  margin-left: auto; /* pin refresh + "Last updated" toward the right cluster */
 }
 
 .header-controls {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+}
+
+.notification-center {
+  flex-shrink: 0;
+}
+
+.codex-profile-dropdown {
+  flex-shrink: 0;
 }
 
 
@@ -380,6 +402,7 @@ button, input, select { font-family: inherit; }
   font-size: 13px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  white-space: nowrap;
 }
 
 /* Timezone Badge + Picker */
