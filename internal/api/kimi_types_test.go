@@ -71,6 +71,24 @@ func TestKimiDisplayName(t *testing.T) {
 	}
 }
 
+func TestKimiMembershipDisplayName(t *testing.T) {
+	cases := map[string]string{
+		"LEVEL_FREE":         "Free",
+		"LEVEL_BASIC":        "Adagio",
+		"LEVEL_STANDARD":     "Moderato",
+		"LEVEL_INTERMEDIATE": "Allegretto",
+		"LEVEL_ADVANCED":     "Allegro",
+		"LEVEL_PREMIUM":      "Vivace",
+		"":                   "",
+		"LEVEL_UNKNOWN_FUTURE": "LEVEL_UNKNOWN_FUTURE",
+	}
+	for in, want := range cases {
+		if got := KimiMembershipDisplayName(in); got != want {
+			t.Errorf("KimiMembershipDisplayName(%q)=%q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestUtilizationFromRemainingOnly(t *testing.T) {
 	d := &KimiUsageDetail{Limit: "100", Remaining: "40"}
 	util, limit, used, rem, _, ok := utilizationFromDetail(d)

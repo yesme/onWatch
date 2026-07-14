@@ -61,14 +61,25 @@ and rewrite the credentials file (mode `0600`).
 
 ## What is tracked
 
-Dashboard scope is intentionally **only two cards** (same data Code CLI surfaces for rate limits):
+Dashboard quota cards (same rate-limit surface as Code CLI):
 
 | Card | Source | Meaning |
 |------|--------|---------|
 | **7-day** | `usage` | 7-day utilization (`used/limit`). Product UI may show one decimal place; the API usually returns integer percents. |
 | **5-hour** | `limits[]` with `duration=300` + `TIME_UNIT_MINUTE` | Rolling 5-hour window |
 
-Other `/usages` fields (`totalQuota`, non-5h windows, plan level, etc.) are ignored in the UI. The membership site “total usage” bar (e.g. on [My Quota](https://www.kimi.com/membership/subscription?tab=quota)) comes from a separate web API (`GetSubscriptionStats`) and is **not** tracked.
+Insights also shows **Membership** plan name from `user.membership.level`:
+
+| API level | Display name |
+|-----------|--------------|
+| `LEVEL_FREE` | Free |
+| `LEVEL_BASIC` | Adagio |
+| `LEVEL_STANDARD` | Moderato |
+| `LEVEL_INTERMEDIATE` | Allegretto |
+| `LEVEL_ADVANCED` | Allegro |
+| `LEVEL_PREMIUM` | Vivace |
+
+Other `/usages` fields (`totalQuota`, non-5h windows) are ignored. The membership site “total usage” bar (e.g. on [My Quota](https://www.kimi.com/membership/subscription?tab=quota)) comes from a separate web API (`GetSubscriptionStats`) and is **not** tracked.
 
 ### Timezones
 

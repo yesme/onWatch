@@ -103,12 +103,40 @@ var kimiDisplayNames = map[string]string{
 	"weekly": "7-day",
 }
 
+// Kimi membership plan levels from user.membership.level → public plan names
+// (tempo naming on kimi.com/membership/pricing).
+var kimiMembershipDisplayNames = map[string]string{
+	"LEVEL_FREE":         "Free",
+	"LEVEL_BASIC":        "Adagio",
+	"LEVEL_STANDARD":     "Moderato",
+	"LEVEL_INTERMEDIATE": "Allegretto",
+	"LEVEL_ADVANCED":     "Allegro",
+	"LEVEL_PREMIUM":      "Vivace",
+}
+
 // KimiDisplayName returns a UI label for a kimi quota key.
 func KimiDisplayName(key string) string {
 	if name, ok := kimiDisplayNames[key]; ok {
 		return name
 	}
 	return key
+}
+
+// KimiMembershipDisplayName maps API plan enums to readable names.
+// Unknown values are returned unchanged so new tiers still surface.
+func KimiMembershipDisplayName(level string) string {
+	level = strings.TrimSpace(level)
+	if level == "" {
+		return ""
+	}
+	if name, ok := kimiMembershipDisplayNames[level]; ok {
+		return name
+	}
+	// tolerate lowercase / stripped LEVEL_ prefix variants
+	if name, ok := kimiMembershipDisplayNames[strings.ToUpper(level)]; ok {
+		return name
+	}
+	return level
 }
 
 func kimiStatusFromUtilization(util float64) string {

@@ -82,6 +82,10 @@ func (h *Handler) buildKimiCurrent() map[string]interface{} {
 	response["quotas"] = quotas
 	response["user_id"] = latest.UserID
 	response["region"] = latest.Region
+	if latest.Membership != "" {
+		response["membership"] = api.KimiMembershipDisplayName(latest.Membership)
+		response["membership_level"] = latest.Membership
+	}
 	response["login_method"] = "oauth"
 
 	if h.kimiTracker != nil && len(latest.Quotas) > 0 {
@@ -329,8 +333,12 @@ func (h *Handler) buildKimiInsights(hidden map[string]bool) insightsResponse {
 			})
 		}
 	}
-	// Membership plan level (e.g. LEVEL_INTERMEDIATE) is stored but not shown —
-	// UI scope is only 5h / 7-day utilization.
+	if latest.Membership != "" && !hidden["membership"] {
+		planName := api.KimiMembershipDisplayName(latest.Membership)
+		resp.Stats = append(resp.Stats, insightStat{
+			Label: "Membership", Value: planName, Sublabel: "Kimi Code plan",
+		})
+	}
 	return resp
 }
 
