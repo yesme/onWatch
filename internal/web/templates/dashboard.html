@@ -12,7 +12,8 @@
             {{range .Providers}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
                     data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}
+                <span class="provider-tab-icon" aria-hidden="true"></span>
+                <span class="provider-tab-label">{{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}</span>
             </button>
             {{end}}
         </div>

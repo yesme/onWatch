@@ -318,7 +318,10 @@ button, input, select { font-family: inherit; }
   scrollbar-width: thin;
 }
 .provider-tab {
-  padding: 6px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -342,6 +345,81 @@ button, input, select { font-family: inherit; }
 }
 .provider-tab.active[data-provider="anthropic"] {
   color: var(--accent-anthropic);
+}
+
+/* Provider brand mark before tab label (mask uses currentColor). */
+.provider-tab-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  background-color: currentColor;
+  opacity: 0.92;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  /* Default: simple circle if no brand asset */
+  -webkit-mask-image: url("icons/synthetic.svg");
+  mask-image: url("icons/synthetic.svg");
+}
+.provider-tab[data-provider="synthetic"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/synthetic.svg");
+  mask-image: url("icons/synthetic.svg");
+}
+.provider-tab[data-provider="zai"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/zai.svg");
+  mask-image: url("icons/zai.svg");
+}
+.provider-tab[data-provider="anthropic"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/anthropic.svg");
+  mask-image: url("icons/anthropic.svg");
+}
+.provider-tab[data-provider="copilot"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/copilot.svg");
+  mask-image: url("icons/copilot.svg");
+}
+.provider-tab[data-provider="codex"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/openai.svg");
+  mask-image: url("icons/openai.svg");
+}
+.provider-tab[data-provider="antigravity"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/antigravity.svg");
+  mask-image: url("icons/antigravity.svg");
+}
+.provider-tab[data-provider="minimax"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/minimax.svg");
+  mask-image: url("icons/minimax.svg");
+}
+.provider-tab[data-provider="openrouter"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/openrouter.svg");
+  mask-image: url("icons/openrouter.svg");
+}
+.provider-tab[data-provider="gemini"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/gemini.svg");
+  mask-image: url("icons/gemini.svg");
+}
+.provider-tab[data-provider="cursor"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/cursor.svg");
+  mask-image: url("icons/cursor.svg");
+}
+.provider-tab[data-provider="grok"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/grok.svg");
+  mask-image: url("icons/grok.svg");
+}
+.provider-tab[data-provider="kimi"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/kimi.svg");
+  mask-image: url("icons/kimi.svg");
+}
+.provider-tab[data-provider="api-integrations"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/api-integrations.svg");
+  mask-image: url("icons/api-integrations.svg");
+}
+.provider-tab[data-provider="both"] .provider-tab-icon {
+  -webkit-mask-image: url("icons/all.svg");
+  mask-image: url("icons/all.svg");
 }
 
 .header-actions {
