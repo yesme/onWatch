@@ -82,7 +82,6 @@ func (h *Handler) buildKimiCurrent() map[string]interface{} {
 	response["quotas"] = quotas
 	response["user_id"] = latest.UserID
 	response["region"] = latest.Region
-	response["membership"] = latest.Membership
 	response["login_method"] = "oauth"
 
 	if h.kimiTracker != nil && len(latest.Quotas) > 0 {
@@ -168,7 +167,7 @@ func (h *Handler) loggingHistoryKimi(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// stable preferred order
-	preferred := []string{api.KimiQuotaSevenDay, api.KimiQuota5h, api.KimiQuotaTotal}
+	preferred := []string{api.KimiQuotaSevenDay, api.KimiQuota5h}
 	quotaNames := make([]string, 0, len(order))
 	for _, p := range preferred {
 		if _, ok := nameSet[p]; ok {
@@ -330,11 +329,8 @@ func (h *Handler) buildKimiInsights(hidden map[string]bool) insightsResponse {
 			})
 		}
 	}
-	if latest.Membership != "" && !hidden["membership"] {
-		resp.Stats = append(resp.Stats, insightStat{
-			Label: "Membership", Value: latest.Membership, Sublabel: "Kimi Code plan",
-		})
-	}
+	// Membership plan level (e.g. LEVEL_INTERMEDIATE) is stored but not shown —
+	// UI scope is only 5h / 7-day utilization.
 	return resp
 }
 

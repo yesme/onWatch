@@ -24,17 +24,25 @@ func TestKimiUsagesToSnapshot(t *testing.T) {
 	if snap.Membership != "LEVEL_INTERMEDIATE" {
 		t.Fatalf("membership: %s", snap.Membership)
 	}
-	if len(snap.Quotas) < 2 {
-		t.Fatalf("expected >=2 quotas, got %d", len(snap.Quotas))
+	if len(snap.Quotas) != 2 {
+		t.Fatalf("expected exactly 7-day + 5h, got %d: %+v", len(snap.Quotas), snap.Quotas)
 	}
-	var weekly *KimiQuota
+	var weekly, fiveH *KimiQuota
 	for i := range snap.Quotas {
-		if snap.Quotas[i].Name == KimiQuotaSevenDay {
+		switch snap.Quotas[i].Name {
+		case KimiQuotaSevenDay:
 			weekly = &snap.Quotas[i]
+		case KimiQuota5h:
+			fiveH = &snap.Quotas[i]
+		default:
+			t.Fatalf("unexpected quota name: %s", snap.Quotas[i].Name)
 		}
 	}
 	if weekly == nil {
 		t.Fatal("missing seven_day quota")
+	}
+	if fiveH == nil {
+		t.Fatal("missing 5h quota")
 	}
 	if weekly.Utilization < 65.9 || weekly.Utilization > 66.1 {
 		t.Fatalf("seven_day util: %v", weekly.Utilization)
@@ -45,6 +53,12 @@ func TestKimiUsagesToSnapshot(t *testing.T) {
 	if weekly.Status != "warning" {
 		// 66% is warning (>=50)
 		t.Fatalf("status: %s", weekly.Status)
+	}
+	// totalQuota in fixture must not become a card
+	for _, q := range snap.Quotas {
+		if q.Name == "total" {
+			t.Fatal("totalQuota must not be mapped")
+		}
 	}
 }
 

@@ -61,17 +61,14 @@ and rewrite the credentials file (mode `0600`).
 
 ## What is tracked
 
-From `/usages` (same parsing as official kimi-code / kimi-cli):
+Dashboard scope is intentionally **only two cards** (same data Code CLI surfaces for rate limits):
 
 | Card | Source | Meaning |
 |------|--------|---------|
 | **7-day** | `usage` | 7-day utilization (`used/limit`). Product UI may show one decimal place; the API usually returns integer percents. |
 | **5-hour** | `limits[]` with `duration=300` + `TIME_UNIT_MINUTE` | Rolling 5-hour window |
-| Other windows | other `limits[]` entries | Labeled from window duration (e.g. `Nh limit`) |
 
-**Not available from `/usages` today:** a long-horizon “total usage” meter with a multi-week reset (e.g. monthly). Official clients also ignore `totalQuota` unless a `boosterWallet` block is present. If you see total usage only in the Kimi website UI, that data is not exposed on this endpoint yet.
-
-Membership (`user.membership.level`) is shown in Insights when present.
+Other `/usages` fields (`totalQuota`, non-5h windows, plan level, etc.) are ignored in the UI. The membership site “total usage” bar (e.g. on [My Quota](https://www.kimi.com/membership/subscription?tab=quota)) comes from a separate web API (`GetSubscriptionStats`) and is **not** tracked.
 
 ### Timezones
 

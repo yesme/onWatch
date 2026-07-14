@@ -92,15 +92,13 @@ const (
 	// Primary bucket from payload.usage — Kimi Code UI labels this as 7-day usage.
 	// Official kimi-code CLI labels it "Weekly limit".
 	KimiQuotaSevenDay = "seven_day"
-	KimiQuota5h       = "5h"
-	// Kept for forward compatibility if the API starts returning a named total window.
-	KimiQuotaTotal = "total"
+	// Rolling 5-hour window from limits[] (duration=300 TIME_UNIT_MINUTE).
+	KimiQuota5h = "5h"
 )
 
 var kimiDisplayNames = map[string]string{
 	KimiQuotaSevenDay: "7-day",
 	KimiQuota5h:       "5-hour",
-	KimiQuotaTotal:    "Total",
 	// legacy key used in early snapshots
 	"weekly": "7-day",
 }
@@ -267,12 +265,13 @@ func (r *KimiUsagesResponse) ToSnapshot(capturedAt time.Time) *KimiSnapshot {
 		})
 	}
 
-	// Window limits (e.g. 300 TIME_UNIT_MINUTE → 5-hour).
+	// Window limits: only keep the rolling 5-hour bucket for the dashboard.
+	// Other durations (and payload.totalQuota) are out of scope — membership
+	// "total usage" lives on the website GetSubscriptionStats path, not /usages.
 	for i, lim := range r.Limits {
 		name := windowLabel(lim.Window, i)
-		// avoid colliding with reserved names
-		if name == KimiQuotaSevenDay || name == KimiQuotaTotal || name == "weekly" {
-			name = fmt.Sprintf("%s_%d", name, i+1)
+		if name != KimiQuota5h {
+			continue
 		}
 		if util, limit, used, rem, resets, ok := utilizationFromDetail(lim.Detail); ok {
 			snap.Quotas = append(snap.Quotas, KimiQuota{
@@ -286,9 +285,6 @@ func (r *KimiUsagesResponse) ToSnapshot(capturedAt time.Time) *KimiSnapshot {
 			})
 		}
 	}
-
-	// totalQuota is intentionally not mapped: official clients ignore it and it
-	// does not match the product UI "total usage" (often a longer membership window).
 
 	return snap
 }
