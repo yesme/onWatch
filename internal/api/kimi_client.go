@@ -196,35 +196,57 @@ func (c *KimiClient) resolveAccessToken(ctx context.Context) (string, error) {
 }
 
 func (c *KimiClient) refreshAndPersist(ctx context.Context) error {
-	creds := DetectKimiCredentials(c.logger)
-	if creds == nil || creds.RefreshToken == "" {
+	// Try every known credential store (kimi-code + kimi-cli). After migration,
+	// one path may hold a dead refresh token while the other still works.
+	candidates := DetectAllKimiCredentials(c.logger)
+	if len(candidates) == 0 {
 		return ErrKimiNoCredentials
 	}
-	token, err := c.refreshToken(ctx, creds.RefreshToken)
-	if err != nil {
-		return err
+
+	var lastErr error
+	for _, creds := range candidates {
+		if creds.RefreshToken == "" {
+			continue
+		}
+		token, err := c.refreshToken(ctx, creds.RefreshToken)
+		if err != nil {
+			lastErr = err
+			c.logger.Debug("kimi: refresh failed for credentials",
+				"source", creds.Source, "path", creds.Path, "error", err)
+			continue
+		}
+		creds.AccessToken = token.AccessToken
+		if token.RefreshToken != "" {
+			creds.RefreshToken = token.RefreshToken
+		}
+		if token.ExpiresIn > 0 {
+			creds.ExpiresIn = float64(token.ExpiresIn)
+			creds.ExpiresAt = float64(time.Now().Unix() + int64(token.ExpiresIn))
+		}
+		if token.TokenType != "" {
+			creds.TokenType = token.TokenType
+		}
+		if token.Scope != "" {
+			creds.Scope = token.Scope
+		}
+		if err := SaveKimiCredentials(creds); err != nil {
+			c.logger.Warn("kimi: failed to persist refreshed credentials",
+				"source", creds.Source, "path", creds.Path, "error", err)
+		}
+		InvalidateKimiCredentialsCache()
+		// Prefer the refreshed set on next load
+		kimiCredMu.Lock()
+		kimiCredCache = creds
+		kimiCredAt = time.Now()
+		kimiCredMu.Unlock()
+		c.logger.Info("Kimi Code token refreshed from credentials",
+			"source", creds.Source, "path", creds.Path)
+		return nil
 	}
-	creds.AccessToken = token.AccessToken
-	if token.RefreshToken != "" {
-		creds.RefreshToken = token.RefreshToken
+	if lastErr != nil {
+		return lastErr
 	}
-	if token.ExpiresIn > 0 {
-		creds.ExpiresIn = float64(token.ExpiresIn)
-		creds.ExpiresAt = float64(time.Now().Unix() + int64(token.ExpiresIn))
-	}
-	if token.TokenType != "" {
-		creds.TokenType = token.TokenType
-	}
-	if token.Scope != "" {
-		creds.Scope = token.Scope
-	}
-	if err := SaveKimiCredentials(creds); err != nil {
-		c.logger.Warn("kimi: failed to persist refreshed credentials", "error", err)
-	}
-	// bust cache
-	LoadKimiCredentialsCached(c.logger, true)
-	c.logger.Info("Kimi Code token refreshed from credentials")
-	return nil
+	return ErrKimiNoCredentials
 }
 
 type kimiTokenResponse struct {

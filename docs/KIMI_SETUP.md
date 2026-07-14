@@ -11,10 +11,18 @@ This is **not** the Moonshot Open Platform pay-as-you-go balance API (`api.moons
 
 ## Prerequisites
 
-1. Install and log in with [Kimi Code](https://moonshotai.github.io/kimi-code/) (`kimi login`), **or** the legacy `kimi-cli` with Kimi Code OAuth.
-2. Credentials are stored at:
-   - `~/.kimi-code/credentials/kimi-code.json` (preferred)
-   - `~/.kimi/credentials/kimi-code.json` (legacy, pre-migration)
+1. Install and log in with either CLI (both use the same Kimi Code OAuth + `/usages` API):
+   - **kimi-code** (current): [docs](https://moonshotai.github.io/kimi-code/) — `kimi login`
+   - **kimi-cli** (legacy, still usable): share dir `~/.kimi` (or `$KIMI_SHARE_DIR`)
+2. Credentials file (same JSON shape) is searched in order:
+   - `$KIMI_CODE_CREDENTIALS` or `$KIMI_CREDENTIALS` (explicit file)
+   - `$KIMI_CODE_HOME/credentials/kimi-code.json`
+   - `$KIMI_SHARE_DIR/credentials/kimi-code.json` (kimi-cli override)
+   - `$KIMI_HOME/credentials/kimi-code.json`
+   - `~/.kimi-code/credentials/kimi-code.json` (**kimi-code**)
+   - `~/.kimi/credentials/kimi-code.json` (**kimi-cli**)
+
+When both CLIs have credentials, onWatch picks the best set (fresh access token preferred; otherwise any with a refresh token). Token refresh tries **every** candidate if one fails—useful after a partial migration left a dead refresh token under `.kimi-code`.
 
 ## Enable
 
