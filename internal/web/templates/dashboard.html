@@ -11,10 +11,12 @@
         <div class="provider-tabs" id="provider-tabs" role="tablist" aria-label="Select provider">
             {{range .Providers}}
             {{$iconFile := .}}{{if eq . "codex"}}{{$iconFile = "openai"}}{{else if eq . "both"}}{{$iconFile = "all"}}{{end}}
+            {{$iconURL := printf "%s/static/icons/%s.svg" $.BasePath $iconFile}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
-                    data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
-                {{/* <img> (not CSS mask) so icons render even when an old style.css is still cached. */}}
-                <img class="provider-tab-icon" src="{{$.BasePath}}/static/icons/{{$iconFile}}.svg" width="14" height="14" alt="" aria-hidden="true">
+                    data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}"
+                    style="--provider-tab-icon: url('{{$iconURL}}')">
+                {{/* Masked span: paints with currentColor so light/dark + active accents match the label. */}}
+                <span class="provider-tab-icon" aria-hidden="true"></span>
                 <span class="provider-tab-label">{{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}</span>
             </button>
             {{end}}

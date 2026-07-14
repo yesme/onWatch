@@ -347,14 +347,24 @@ button, input, select { font-family: inherit; }
   color: var(--accent-anthropic);
 }
 
-/* Provider brand mark before tab label (real <img> — survives CSS cache misses). */
+/* Provider brand mark before tab label.
+   Uses CSS mask + currentColor so the glyph tracks tab text color:
+   light/dark tokens, hover, and active accents (teal / anthropic). */
 .provider-tab-icon {
   display: block;
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  object-fit: contain;
+  background-color: currentColor;
   opacity: 0.88;
+  -webkit-mask-image: var(--provider-tab-icon);
+  mask-image: var(--provider-tab-icon);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
 .provider-tab:hover .provider-tab-icon,
 .provider-tab.active .provider-tab-icon {
