@@ -2996,13 +2996,35 @@ function formatDateTime(isoString) {
   return d.toLocaleString('en-US', opts);
 }
 
+// Compact UTC offset for header/clock labels, e.g. "UTC+8" / "UTC-05:00".
+// Prefer shortOffset over IANA ids (Asia/Shanghai) which are too long for the header.
+function formatTimezoneOffsetLabel(tz, date = new Date()) {
+  if (!tz) return '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    }).formatToParts(date);
+    const name = parts.find((p) => p.type === 'timeZoneName')?.value || '';
+    // GMT / GMT+8 / GMT-5 → UTC / UTC+8 / UTC-5
+    if (name) return name.replace(/^GMT/i, 'UTC');
+  } catch (e) { /* fall through */ }
+  try {
+    return tzAbbr(tz);
+  } catch (e) {
+    return tz.split('/').pop() || '';
+  }
+}
+
 function formatClockTime(value) {
   const d = parseDateValue(value);
   if (!d) return '--';
   const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : undefined;
   const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
   if (tz) opts.timeZone = tz;
-  return `${d.toLocaleTimeString('en-US', opts)} ${tz || ''}`.trim();
+  const time = d.toLocaleTimeString('en-US', opts);
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return offset ? `${time} ${offset}` : time;
 }
 
 function zonedDateKey(date, tz) {
@@ -3033,7 +3055,8 @@ function formatResetTime(isoString) {
   const today = zonedDateKey(new Date(), tz);
   const localTime = d.toLocaleTimeString('en-US', timeOpts);
   const localDate = resetDay === today ? '' : `${d.toLocaleDateString('en-US', dateOpts)}, `;
-  return `Reset at ${localDate}${localTime}${tz ? ' ' + tz : ''}`;
+  const offset = tz ? formatTimezoneOffsetLabel(tz, d) : '';
+  return `Reset at ${localDate}${localTime}${offset ? ' ' + offset : ''}`;
 }
 
 function setResetTimeElement(el, isoString) {
@@ -3053,7 +3076,13 @@ function setLastUpdated(value = new Date()) {
   if (!lastUpdated) return;
   const d = parseDateValue(value) || new Date();
   lastUpdated.dataset.lastUpdatedAt = d.toISOString();
-  lastUpdated.textContent = `Last updated: ${formatClockTime(d)}`;
+  // Compact header label: "Updated 04:59:43 UTC+8" (full IANA zone in tooltip).
+  const clock = formatClockTime(d);
+  lastUpdated.textContent = `Updated ${clock}`;
+  const tz = typeof getEffectiveTimezone === 'function' ? getEffectiveTimezone() : '';
+  lastUpdated.title = tz
+    ? `Last updated at ${clock} (${tz})`
+    : `Last updated at ${clock}`;
 }
 
 function refreshTimezoneSensitiveText() {
