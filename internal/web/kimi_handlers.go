@@ -70,7 +70,14 @@ func (h *Handler) buildKimiCurrent() map[string]interface{} {
 			"status":      q.Status,
 		}
 		if q.ResetsAt != nil {
-			qm["resets_at"] = q.ResetsAt.Format(time.RFC3339)
+			// CamelCase for menubar normalizeQuotas / other providers; snake_case
+			// kept for dashboard renderKimiQuotaCards (reads resets_at || resetsAt).
+			timeUntilReset := time.Until(*q.ResetsAt)
+			resetStr := q.ResetsAt.Format(time.RFC3339)
+			qm["resetsAt"] = resetStr
+			qm["resets_at"] = resetStr
+			qm["timeUntilReset"] = formatDuration(timeUntilReset)
+			qm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 		}
 		if q.Limit > 0 {
 			qm["limit"] = q.Limit
@@ -99,7 +106,12 @@ func (h *Handler) buildKimiCurrent() map[string]interface{} {
 				"completed_cycles": sum.CompletedCycles,
 			}
 			if sum.ResetsAt != nil {
-				sm["resets_at"] = sum.ResetsAt.Format(time.RFC3339)
+				timeUntilReset := time.Until(*sum.ResetsAt)
+				resetStr := sum.ResetsAt.Format(time.RFC3339)
+				sm["resetsAt"] = resetStr
+				sm["resets_at"] = resetStr
+				sm["timeUntilReset"] = formatDuration(timeUntilReset)
+				sm["timeUntilResetSeconds"] = int64(timeUntilReset.Seconds())
 			}
 			response["summary"] = sm
 		}
