@@ -32,7 +32,7 @@ func TestKimiClientFetchSnapshot(t *testing.T) {
 	if len(snap.Quotas) == 0 {
 		t.Fatal("no quotas")
 	}
-	if snap.Quotas[0].Name != KimiQuotaWeekly {
+	if snap.Quotas[0].Name != KimiQuotaSevenDay {
 		t.Fatalf("name %s", snap.Quotas[0].Name)
 	}
 }

@@ -168,7 +168,7 @@ func (h *Handler) loggingHistoryKimi(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// stable preferred order
-	preferred := []string{api.KimiQuotaWeekly, api.KimiQuota5h, api.KimiQuotaTotal}
+	preferred := []string{api.KimiQuotaSevenDay, api.KimiQuota5h, api.KimiQuotaTotal}
 	quotaNames := make([]string, 0, len(order))
 	for _, p := range preferred {
 		if _, ok := nameSet[p]; ok {
@@ -252,10 +252,10 @@ func (h *Handler) cycleOverviewKimi(w http.ResponseWriter, r *http.Request) {
 	}
 	quotaType := r.URL.Query().Get("quota")
 	if quotaType == "" {
-		quotaType = api.KimiQuotaWeekly
+		quotaType = api.KimiQuotaSevenDay
 	}
 	liveUtil := 0.0
-	quotaNames := []string{api.KimiQuotaWeekly}
+	quotaNames := []string{api.KimiQuotaSevenDay}
 	if latest := h.latestKimiSnapshot(); latest != nil {
 		names := make([]string, 0, len(latest.Quotas))
 		for _, q := range latest.Quotas {

@@ -53,15 +53,21 @@ and rewrite the credentials file (mode `0600`).
 
 ## What is tracked
 
-From `/usages`:
+From `/usages` (same parsing as official kimi-code / kimi-cli):
 
 | Card | Source | Meaning |
 |------|--------|---------|
-| Weekly | `usage` | Primary weekly utilization (`used/limit`) |
-| 5h Limit | `limits[]` window (300 minutes) | Short window quota |
-| Total Quota | `totalQuota` | Additional total remaining/limit |
+| **7-day** | `usage` | 7-day utilization (`used/limit`). Product UI may show one decimal place; the API usually returns integer percents. |
+| **5-hour** | `limits[]` with `duration=300` + `TIME_UNIT_MINUTE` | Rolling 5-hour window |
+| Other windows | other `limits[]` entries | Labeled from window duration (e.g. `Nh limit`) |
+
+**Not available from `/usages` today:** a long-horizon “total usage” meter with a multi-week reset (e.g. monthly). Official clients also ignore `totalQuota` unless a `boosterWallet` block is present. If you see total usage only in the Kimi website UI, that data is not exposed on this endpoint yet.
 
 Membership (`user.membership.level`) is shown in Insights when present.
+
+### Timezones
+
+`resetTime` values are UTC. The dashboard formats them in your configured timezone (Settings). Example: `2026-07-14T16:13:41Z` → `2026-07-15 00:13` in Asia/Shanghai.
 
 ## Verify
 

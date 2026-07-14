@@ -29,15 +29,15 @@ func TestKimiUsagesToSnapshot(t *testing.T) {
 	}
 	var weekly *KimiQuota
 	for i := range snap.Quotas {
-		if snap.Quotas[i].Name == KimiQuotaWeekly {
+		if snap.Quotas[i].Name == KimiQuotaSevenDay {
 			weekly = &snap.Quotas[i]
 		}
 	}
 	if weekly == nil {
-		t.Fatal("missing weekly quota")
+		t.Fatal("missing seven_day quota")
 	}
 	if weekly.Utilization < 65.9 || weekly.Utilization > 66.1 {
-		t.Fatalf("weekly util: %v", weekly.Utilization)
+		t.Fatalf("seven_day util: %v", weekly.Utilization)
 	}
 	if weekly.ResetsAt == nil {
 		t.Fatal("expected weekly reset time")
@@ -49,8 +49,8 @@ func TestKimiUsagesToSnapshot(t *testing.T) {
 }
 
 func TestKimiDisplayName(t *testing.T) {
-	if KimiDisplayName(KimiQuotaWeekly) != "Weekly" {
-		t.Fatal(KimiDisplayName(KimiQuotaWeekly))
+	if KimiDisplayName(KimiQuotaSevenDay) != "7-day" {
+		t.Fatal(KimiDisplayName(KimiQuotaSevenDay))
 	}
 	if KimiDisplayName("custom") != "custom" {
 		t.Fatal(KimiDisplayName("custom"))

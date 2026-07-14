@@ -89,15 +89,20 @@ type KimiSnapshot struct {
 }
 
 const (
-	KimiQuotaWeekly = "weekly"
-	KimiQuota5h     = "5h"
-	KimiQuotaTotal  = "total"
+	// Primary bucket from payload.usage — Kimi Code UI labels this as 7-day usage.
+	// Official kimi-code CLI labels it "Weekly limit".
+	KimiQuotaSevenDay = "seven_day"
+	KimiQuota5h       = "5h"
+	// Kept for forward compatibility if the API starts returning a named total window.
+	KimiQuotaTotal = "total"
 )
 
 var kimiDisplayNames = map[string]string{
-	KimiQuotaWeekly: "Weekly",
-	KimiQuota5h:     "5h Limit",
-	KimiQuotaTotal:  "Total Quota",
+	KimiQuotaSevenDay: "7-day",
+	KimiQuota5h:       "5-hour",
+	KimiQuotaTotal:    "Total",
+	// legacy key used in early snapshots
+	"weekly": "7-day",
 }
 
 // KimiDisplayName returns a UI label for a kimi quota key.
@@ -248,10 +253,11 @@ func (r *KimiUsagesResponse) ToSnapshot(capturedAt time.Time) *KimiSnapshot {
 		snap.RawJSON = string(raw)
 	}
 
-	// Primary weekly usage
+	// Primary 7-day / weekly bucket (payload.usage).
+	// API usually returns integer percent strings (e.g. "66" for ~66.21% in the product UI).
 	if util, limit, used, rem, resets, ok := utilizationFromDetail(r.Usage); ok {
 		snap.Quotas = append(snap.Quotas, KimiQuota{
-			Name:        KimiQuotaWeekly,
+			Name:        KimiQuotaSevenDay,
 			Utilization: util,
 			ResetsAt:    resets,
 			Status:      kimiStatusFromUtilization(util),
@@ -261,11 +267,11 @@ func (r *KimiUsagesResponse) ToSnapshot(capturedAt time.Time) *KimiSnapshot {
 		})
 	}
 
-	// Window limits (e.g. 5h)
+	// Window limits (e.g. 300 TIME_UNIT_MINUTE → 5-hour).
 	for i, lim := range r.Limits {
 		name := windowLabel(lim.Window, i)
-		// avoid colliding with weekly/total names
-		if name == KimiQuotaWeekly || name == KimiQuotaTotal {
+		// avoid colliding with reserved names
+		if name == KimiQuotaSevenDay || name == KimiQuotaTotal || name == "weekly" {
 			name = fmt.Sprintf("%s_%d", name, i+1)
 		}
 		if util, limit, used, rem, resets, ok := utilizationFromDetail(lim.Detail); ok {
@@ -281,19 +287,8 @@ func (r *KimiUsagesResponse) ToSnapshot(capturedAt time.Time) *KimiSnapshot {
 		}
 	}
 
-	// totalQuota (optional third card)
-	if util, limit, used, rem, resets, ok := utilizationFromDetail(r.Total); ok {
-		// total may report remaining only — still useful
-		snap.Quotas = append(snap.Quotas, KimiQuota{
-			Name:        KimiQuotaTotal,
-			Utilization: util,
-			ResetsAt:    resets,
-			Status:      kimiStatusFromUtilization(util),
-			Limit:       limit,
-			Used:        used,
-			Remaining:   rem,
-		})
-	}
+	// totalQuota is intentionally not mapped: official clients ignore it and it
+	// does not match the product UI "total usage" (often a longer membership window).
 
 	return snap
 }

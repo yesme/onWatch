@@ -3636,7 +3636,7 @@ function updateGrokQuotaCards(quotas, containerId) {
 
 // Kimi Code quota renderer (weekly / 5h / total style quotas).
 function kimiDisplayName(name) {
-  const map = { weekly: 'Weekly', '5h': '5h Limit', total: 'Total Quota' };
+  const map = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
   return map[name] || name;
 }
 
@@ -3644,12 +3644,12 @@ function renderKimiQuotaCards(quotas, containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = '';
-  const list = (quotas && quotas.length) ? quotas : [{ name: 'weekly', utilization: 0, status: 'healthy' }];
+  const list = (quotas && quotas.length) ? quotas : [{ name: 'seven_day', utilization: 0, status: 'healthy' }];
   list.forEach((q, idx) => {
     const pct = (q.utilization || 0);
     const pctStr = pct.toFixed(1);
     const status = q.status || getQuotaStatus(pct);
-    const name = (q.name || 'weekly');
+    const name = (q.name || 'seven_day');
     const label = q.displayName || q.label || kimiDisplayName(name);
     const resetsAt = q.resets_at || q.resetsAt || '';
     const cdSecs = resetsAt ? Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)) : 0;
@@ -3701,7 +3701,7 @@ function updateKimiQuotaCards(quotas, containerId) {
     return;
   }
   (quotas || []).forEach(q => {
-    const name = q.name || 'weekly';
+    const name = q.name || 'seven_day';
     const pct = q.utilization || 0;
     const pctStr = pct.toFixed(1);
     const status = q.status || getQuotaStatus(pct);
@@ -5429,13 +5429,13 @@ async function fetchHistory(range) {
     }
 
     if (provider === 'kimi') {
-      // Kimi history: array of { capturedAt, weekly, 5h, total, ... }
+      // Kimi history: array of { capturedAt, seven_day, 5h, ... }
       const kimiColors = {
         weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
         '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
         total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
       };
-      const kimiDisplay = { weekly: 'Weekly', '5h': '5h Limit', total: 'Total Quota' };
+      const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
       const quotaKeys = new Set();
       historyRows.forEach(d => { Object.keys(d).forEach(k => { if (k !== 'capturedAt') quotaKeys.add(k); }); });
       const datasets = [];
@@ -6448,8 +6448,9 @@ function buildProviderCardDatasets(provider, rows, range) {
     return buildDynamicDatasetsForRows(rows, range, grokDisplay, grokColors, grokFallback, 'grok');
   }
   if (provider === 'kimi') {
-    const kimiDisplay = { weekly: 'Weekly', '5h': '5h Limit', total: 'Total Quota' };
+    const kimiDisplay = { seven_day: '7-day', weekly: '7-day', '5h': '5-hour', total: 'Total' };
     const kimiColors = {
+      seven_day: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
       weekly: { border: '#6366F1', bg: 'rgba(99, 102, 241, 0.08)' },
       '5h': { border: '#F59E0B', bg: 'rgba(245, 158, 11, 0.08)' },
       total: { border: '#0D9488', bg: 'rgba(13, 148, 136, 0.06)' },
