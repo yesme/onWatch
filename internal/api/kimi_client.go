@@ -33,6 +33,8 @@ type KimiClient struct {
 	logger     *slog.Logger
 	// optional static token (Docker / env override). When empty, loads from disk + refresh.
 	staticToken string
+	// refreshAllowed gates OAuth refresh-and-write. nil means allow (default).
+	refreshAllowed func() bool
 }
 
 // KimiOption configures a KimiClient.
@@ -56,6 +58,19 @@ func WithKimiTimeout(d time.Duration) KimiOption {
 // WithKimiStaticToken forces a bearer token (skips disk credentials / refresh).
 func WithKimiStaticToken(token string) KimiOption {
 	return func(c *KimiClient) { c.staticToken = strings.TrimSpace(token) }
+}
+
+// WithKimiRefreshAllowed sets a gate for OAuth refresh-and-write (Settings →
+// Auto refresh tokens). When the function returns false, refresh is skipped.
+func WithKimiRefreshAllowed(fn func() bool) KimiOption {
+	return func(c *KimiClient) { c.refreshAllowed = fn }
+}
+
+func (c *KimiClient) oauthRefreshAllowed() bool {
+	if c.refreshAllowed == nil {
+		return true
+	}
+	return c.refreshAllowed()
 }
 
 // NewKimiClient creates a Kimi Code API client.
@@ -231,6 +246,14 @@ func (c *KimiClient) refreshAndPersist(ctx context.Context, creds *KimiCredentia
 		c.logger.Debug("kimi: refreshAndPersist no-op; access not expired",
 			"source", creds.Source, "expires_in_sec", creds.SecondsUntilExpiry())
 		return nil
+	}
+	if !c.oauthRefreshAllowed() {
+		c.logger.Debug("kimi: skipping OAuth refresh - auto_refresh_tokens disabled",
+			"source", creds.Source, "force", force)
+		if creds.AccessToken != "" {
+			return nil
+		}
+		return ErrKimiUnauthorized
 	}
 	if creds.RefreshToken == "" {
 		return ErrKimiUnauthorized

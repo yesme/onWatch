@@ -880,7 +880,9 @@ func run() error {
 		if !cfg.KimiAutoToken {
 			kimiToken = cfg.KimiToken
 		}
-		kimiClient = api.NewKimiClient(kimiToken, logger)
+		kimiClient = api.NewKimiClient(kimiToken, logger, api.WithKimiRefreshAllowed(func() bool {
+			return db.AutoRefreshTokensEnabled()
+		}))
 		logger.Info("Kimi Code API client configured",
 			"auto_token", cfg.KimiAutoToken,
 			"static_token", kimiToken != "",
