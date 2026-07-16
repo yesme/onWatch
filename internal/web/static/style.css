@@ -348,23 +348,21 @@ button, input, select { font-family: inherit; }
 }
 
 /* Provider brand mark before tab label.
-   Uses CSS mask + currentColor so the glyph tracks tab text color:
-   light/dark tokens, hover, and active accents (teal / anthropic). */
+   Use a real <img> (not CSS mask): Safari frequently fails mask-image when
+   the URL comes from a CSS custom property, leaving tabs with no glyphs. */
 .provider-tab-icon {
   display: block;
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  background-color: currentColor;
+  object-fit: contain;
   opacity: 0.88;
-  -webkit-mask-image: var(--provider-tab-icon);
-  mask-image: var(--provider-tab-icon);
-  -webkit-mask-size: contain;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  mask-position: center;
+  /* Monochrome SVGs ship as black; invert for dark theme text contrast. */
+  filter: none;
+}
+[data-theme="dark"] .provider-tab-icon {
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
 }
 .provider-tab:hover .provider-tab-icon,
 .provider-tab.active .provider-tab-icon {

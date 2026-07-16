@@ -13,10 +13,9 @@
             {{$iconFile := .}}{{if eq . "codex"}}{{$iconFile = "openai"}}{{else if eq . "both"}}{{$iconFile = "all"}}{{end}}
             {{$iconURL := printf "%s/static/icons/%s.svg" $.BasePath $iconFile}}
             <button class="provider-tab {{if eq . $.CurrentProvider}}active{{end}}"
-                    data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}"
-                    style="--provider-tab-icon: url('{{$iconURL}}')">
-                {{/* Masked span: paints with currentColor so light/dark + active accents match the label. */}}
-                <span class="provider-tab-icon" aria-hidden="true"></span>
+                    data-provider="{{.}}" role="tab" aria-selected="{{if eq . $.CurrentProvider}}true{{else}}false{{end}}">
+                {{/* Real <img>: Safari often fails CSS mask-image + custom properties; img works everywhere. */}}
+                <img class="provider-tab-icon" src="{{$iconURL}}" width="14" height="14" alt="" decoding="async" aria-hidden="true">
                 <span class="provider-tab-label">{{$label := index $.ProviderLabels .}}{{if $label}}{{$label}}{{else}}{{.}}{{end}}</span>
             </button>
             {{end}}
