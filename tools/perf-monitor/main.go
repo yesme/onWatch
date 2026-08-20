@@ -72,27 +72,7 @@ func main() {
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 	fmt.Println()
 
-	// Parse arguments
-	port := 9211
-	duration := 1 * time.Minute
-	shouldRestart := false
-
-	for i, arg := range os.Args[1:] {
-		switch arg {
-		case "--restart", "-r":
-			shouldRestart = true
-		default:
-			if i == 0 {
-				if p, err := strconv.Atoi(arg); err == nil {
-					port = p
-				}
-			} else if i == 1 {
-				if d, err := time.ParseDuration(arg); err == nil {
-					duration = d
-				}
-			}
-		}
-	}
+	port, duration, shouldRestart := parseArgs(os.Args[1:])
 
 	var pid int
 
@@ -269,6 +249,37 @@ func isOnwatchProcess(pid int) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(string(out)), "onwatch")
+}
+
+// parseArgs reads the optional [port] [duration] positionals and the --restart
+// flag. Positionals are counted separately from flags: indexing on the raw argv
+// position made `--restart 8080 30s` read "8080" as the duration and keep the
+// default port, so a restart aimed at another port stopped whatever was
+// listening on 9211 instead.
+func parseArgs(args []string) (port int, duration time.Duration, shouldRestart bool) {
+	port = 9211
+	duration = 1 * time.Minute
+
+	positional := 0
+	for _, arg := range args {
+		switch arg {
+		case "--restart", "-r":
+			shouldRestart = true
+		default:
+			switch positional {
+			case 0:
+				if p, err := strconv.Atoi(arg); err == nil {
+					port = p
+				}
+			case 1:
+				if d, err := time.ParseDuration(arg); err == nil {
+					duration = d
+				}
+			}
+			positional++
+		}
+	}
+	return port, duration, shouldRestart
 }
 
 func stoponWatch(port int) {

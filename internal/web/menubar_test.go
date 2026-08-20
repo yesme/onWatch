@@ -735,6 +735,28 @@ func TestSortProviderCardsAcceptsBareCodexOrderKey(t *testing.T) {
 	}
 }
 
+func assertQuotaLabels(t *testing.T, quotas []menubar.QuotaMeter, want []string) {
+	t.Helper()
+
+	if len(quotas) != len(want) {
+		t.Fatalf("quota count = %d, want %d (%v)", len(quotas), len(want), quotaLabels(quotas))
+	}
+
+	for i := range want {
+		if quotas[i].Label != want[i] {
+			t.Fatalf("quota order = %v, want %v", quotaLabels(quotas), want)
+		}
+	}
+}
+
+func quotaLabels(quotas []menubar.QuotaMeter) []string {
+	labels := make([]string, 0, len(quotas))
+	for _, quota := range quotas {
+		labels = append(labels, quota.Label)
+	}
+	return labels
+}
+
 func TestMenubarAccountLabel(t *testing.T) {
 	t.Parallel()
 	labels := map[string]string{"codex": "❄️ Codex", "minimax": "Mini"}
@@ -765,19 +787,10 @@ func TestBuildMenubarSnapshotUsesDashboardProviderLabels(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertGrokSnapshot: %v", err)
 	}
-	if _, err := s.InsertKimiSnapshot(&api.KimiSnapshot{
-		CapturedAt: capturedAt,
-		AccountID:  1,
-		Quotas:     []api.KimiQuota{{Name: api.KimiQuotaSevenDay, Utilization: 20, ResetsAt: &reset, Status: "healthy"}},
-	}); err != nil {
-		t.Fatalf("InsertKimiSnapshot: %v", err)
-	}
 
 	cfg := &config.Config{
 		GrokEnabled:  true,
 		GrokToken:    "g",
-		KimiEnabled:  true,
-		KimiToken:    "k",
 		PollInterval: 60 * time.Second,
 		Port:         9211,
 		AdminUser:    "admin",
@@ -786,7 +799,6 @@ func TestBuildMenubarSnapshotUsesDashboardProviderLabels(t *testing.T) {
 	h := NewHandler(s, nil, nil, nil, cfg)
 	if err := h.saveDashboardProviderLabels(map[string]string{
 		"grok": "🛰️ Grok",
-		"kimi": "🎹 Kimi",
 	}); err != nil {
 		t.Fatalf("saveDashboardProviderLabels: %v", err)
 	}
@@ -799,15 +811,9 @@ func TestBuildMenubarSnapshotUsesDashboardProviderLabels(t *testing.T) {
 	if grok.Label != "🛰️ Grok" {
 		t.Fatalf("grok label = %q, want renamed", grok.Label)
 	}
-	kimi := findMenubarProviderCard(t, snapshot, "kimi")
-	if kimi.Label != "🎹 Kimi" {
-		t.Fatalf("kimi label = %q, want renamed", kimi.Label)
-	}
 }
 
-// Grok/Kimi previously only emitted snake_case resets_at without timeUntilReset,
-// so menubar normalizeQuotas left reset_at / time_until_reset empty.
-func TestBuildMenubarSnapshotGrokKimiResetFields(t *testing.T) {
+func TestBuildMenubarSnapshotGrokResetFields(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
@@ -827,23 +833,10 @@ func TestBuildMenubarSnapshotGrokKimiResetFields(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertGrokSnapshot: %v", err)
 	}
-	if _, err := s.InsertKimiSnapshot(&api.KimiSnapshot{
-		CapturedAt: capturedAt,
-		AccountID:  1,
-		UserID:     "u1",
-		Quotas: []api.KimiQuota{
-			{Name: api.KimiQuotaSevenDay, Utilization: 70, ResetsAt: &reset, Status: "warning"},
-			{Name: "5h", Utilization: 10, ResetsAt: &reset, Status: "healthy"},
-		},
-	}); err != nil {
-		t.Fatalf("InsertKimiSnapshot: %v", err)
-	}
 
 	cfg := &config.Config{
 		GrokEnabled:  true,
 		GrokToken:    "grok-test",
-		KimiEnabled:  true,
-		KimiToken:    "kimi-test",
 		PollInterval: 60 * time.Second,
 		Port:         9211,
 		AdminUser:    "admin",
@@ -865,7 +858,42 @@ func TestBuildMenubarSnapshotGrokKimiResetFields(t *testing.T) {
 	if grok.Quotas[0].TimeUntilReset == "" {
 		t.Fatalf("grok time_until_reset empty: %#v", grok.Quotas[0])
 	}
+}
 
+func TestBuildMenubarSnapshotKimiResetFields(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatalf("store.New: %v", err)
+	}
+	defer s.Close()
+
+	reset := time.Now().UTC().Add(3 * time.Hour).Truncate(time.Second)
+	capturedAt := time.Now().UTC().Truncate(time.Second)
+	if _, err := s.InsertKimiSnapshot(&api.KimiSnapshot{
+		CapturedAt: capturedAt,
+		AccountID:  1,
+		UserID:     "u1",
+		Quotas: []api.KimiQuota{
+			{Name: api.KimiQuotaSevenDay, Utilization: 70, ResetsAt: &reset, Status: "warning"},
+			{Name: "5h", Utilization: 10, ResetsAt: &reset, Status: "healthy"},
+		},
+	}); err != nil {
+		t.Fatalf("InsertKimiSnapshot: %v", err)
+	}
+
+	cfg := &config.Config{
+		KimiEnabled:  true,
+		KimiToken:    "kimi-test",
+		PollInterval: 60 * time.Second,
+		Port:         9211,
+		AdminUser:    "admin",
+		AdminPass:    "test",
+	}
+	h := NewHandler(s, nil, nil, nil, cfg)
+	snapshot, err := h.BuildMenubarSnapshot()
+	if err != nil {
+		t.Fatalf("BuildMenubarSnapshot: %v", err)
+	}
 	kimi := findMenubarProviderCard(t, snapshot, "kimi")
 	if len(kimi.Quotas) == 0 {
 		t.Fatal("expected kimi quotas")
@@ -875,26 +903,4 @@ func TestBuildMenubarSnapshotGrokKimiResetFields(t *testing.T) {
 			t.Fatalf("kimi quota %q missing reset fields: %#v", q.Label, q)
 		}
 	}
-}
-
-func assertQuotaLabels(t *testing.T, quotas []menubar.QuotaMeter, want []string) {
-	t.Helper()
-
-	if len(quotas) != len(want) {
-		t.Fatalf("quota count = %d, want %d (%v)", len(quotas), len(want), quotaLabels(quotas))
-	}
-
-	for i := range want {
-		if quotas[i].Label != want[i] {
-			t.Fatalf("quota order = %v, want %v", quotaLabels(quotas), want)
-		}
-	}
-}
-
-func quotaLabels(quotas []menubar.QuotaMeter) []string {
-	labels := make([]string, 0, len(quotas))
-	for _, quota := range quotas {
-		labels = append(labels, quota.Label)
-	}
-	return labels
 }

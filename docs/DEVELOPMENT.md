@@ -447,7 +447,9 @@ onWatch includes a self-update system that downloads new releases from GitHub an
 1. **Check**: Queries `https://api.github.com/repos/onllm-dev/onwatch/releases/latest` (cached for 1 hour)
 2. **Apply**: Downloads the platform-specific binary, validates magic bytes (ELF/Mach-O/PE), replaces the current binary using remove+rename (Unix) or backup-rename (Windows)
 3. **Migrate**: Fixes the systemd unit file if running under systemd (`Restart=always`, `RestartSec=5`)
-4. **Restart**: Uses `systemctl restart` under systemd, or spawns a new process in standalone mode
+4. **Restart**: `systemctl restart` under systemd, `launchctl kickstart -k` under launchd, or a fresh spawn in standalone mode
+
+`runUpdate()` always ends with onWatch running. A PID file naming a dead process (the normal state after a reboot) counts as "not running", and the updater starts the new binary instead of exiting silently.
 
 ### systemd Integration
 
@@ -461,13 +463,30 @@ Under systemd, onWatch auto-detects its service name from `/proc/self/cgroup` an
 
 The startup migration runs before `stopPreviousInstance()`. This is critical for upgrades from older versions: when an old binary spawns the new binary as a post-update child, the child fixes the unit file while the parent is still alive, then kills the parent. systemd sees the main PID die, and `Restart=always` triggers an automatic restart with the new binary.
 
+### launchd Integration (macOS)
+
+macOS has no systemd equivalent, so onWatch manages a per-user LaunchAgent at `~/Library/LaunchAgents/dev.onllm.onwatch.plist` (label `dev.onllm.onwatch`). Without it nothing restarts onWatch after a reboot or logout.
+
+| Key | Value | Why |
+|-----|-------|-----|
+| `RunAtLoad` | `true` | Starts at login and after a reboot |
+| `KeepAlive` | `{SuccessfulExit: false}` | Restarts a crash, but leaves a clean `onwatch stop` (exit 0) stopped |
+| `EnvironmentVariables._ONWATCH_LAUNCHD` | `1` | Tells the process launchd owns its lifecycle |
+| `ProcessType` | `Background` | Lower scheduling priority |
+
+`_ONWATCH_LAUNCHD=1` changes two things in `run()`: the process stays in the foreground (forking would make launchd think the job died and relaunch it in a loop), and it writes its own PID file, since there is no daemonize parent to write one.
+
+Auto-start is opt-in. `install.sh`, `onwatch setup`, and `onwatch update` each offer it once when the agent is missing; declining writes `~/.onwatch/.autostart-declined` so the offer is not repeated. `ONWATCH_AUTOSTART=yes|no` answers the installer prompt non-interactively.
+
 ### Key Source Files
 
 | File | Purpose |
 |------|---------|
 | `internal/update/update.go` | Version check, download, binary replacement, systemd migration |
+| `internal/service/launchd.go` | macOS LaunchAgent plist rendering, install/uninstall/kickstart |
 | `internal/web/handlers.go` | `/api/update/check` and `/api/update/apply` endpoints |
 | `main.go` | `MigrateSystemdUnit()` call on startup, `runUpdate()` CLI handler |
+| `service_cmd.go` | `onwatch service` subcommand, auto-start offer, post-update restart |
 
 ---
 
@@ -495,3 +514,14 @@ chmod +x onwatch
 ./onwatch stop           # Stop existing instance
 ./onwatch --port 9000    # Or use a different port
 ```
+
+### onWatch does not come back after a reboot (macOS)
+
+Check whether the launchd agent is installed:
+
+```bash
+onwatch service status
+launchctl print gui/$UID/dev.onllm.onwatch    # detail, if it is installed
+```
+
+`Auto-start: not installed` means nothing starts onWatch at login - `onwatch service install` fixes it. If it is installed but the job never starts, look at `last exit code` in `launchctl print`: `78: EX_CONFIG` means the plist points at a `WorkingDirectory` or program path that no longer exists (reinstall with `onwatch service install` from the binary you actually run).

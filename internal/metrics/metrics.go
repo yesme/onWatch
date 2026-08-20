@@ -256,6 +256,8 @@ func (m *Metrics) Scrape(s *store.Store, pollInterval time.Duration) {
 	m.scrapeAntigravity(s, staleThreshold)
 	m.scrapeGemini(s, staleThreshold)
 	m.scrapeOpenRouter(s, staleThreshold)
+	m.scrapeMoonshot(s, staleThreshold)
+	m.scrapeDeepSeek(s, staleThreshold)
 	m.scrapeAPIIntegrations(s, staleThreshold)
 }
 
@@ -428,17 +430,32 @@ func (m *Metrics) scrapeZai(s *store.Store, staleThreshold time.Duration) {
 
 	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
 
-	if snap.TokensUsage > 0 {
+	if zaiQuotaDeclared(snap.TokensLimit, snap.TokensUsage, snap.TokensCurrentValue, snap.TokensRemaining, snap.TokensPercentage) {
 		labels := prometheus.Labels{"provider": method, "quota_type": "tokens", "account_id": defaultAccountID}
 		m.quotaUtilization.With(labels).Set(float64(snap.TokensPercentage))
 		if snap.TokensNextResetTime != nil && !snap.TokensNextResetTime.IsZero() {
 			m.quotaResetTimestamp.With(labels).Set(float64(snap.TokensNextResetTime.Unix()))
 		}
 	}
-	if snap.TimeUsage > 0 {
+	if zaiQuotaDeclared(snap.TimeLimit, snap.TimeUsage, snap.TimeCurrentValue, snap.TimeRemaining, snap.TimePercentage) {
 		labels := prometheus.Labels{"provider": method, "quota_type": "time", "account_id": defaultAccountID}
 		m.quotaUtilization.With(labels).Set(float64(snap.TimePercentage))
 	}
+}
+
+// zaiQuotaDeclared reports whether the provider said anything at all about a
+// quota, and gates its series on that rather than on consumption.
+//
+// The previous condition was Usage > 0. Usage is the amount spent, so the
+// series disappeared exactly while the account was still healthy, and stayed
+// missing for plans that report a percentage while leaving usage at zero - the
+// case in issue #112, where tokens_usage=0 accompanied tokens_percentage=68 and
+// no reset timestamp was emitted either. Gating on the limit alone would invert
+// the same mistake, since Unit*Number can be zero while usage is real. Any
+// non-zero signal therefore counts as declared; a quota reading zero on every
+// axis is one the plan does not have.
+func zaiQuotaDeclared(limit int, usage, currentValue, remaining float64, percentage int) bool {
+	return limit > 0 || usage > 0 || currentValue > 0 || remaining > 0 || percentage > 0
 }
 
 func (m *Metrics) scrapeMiniMax(s *store.Store, staleThreshold time.Duration) {
@@ -477,8 +494,36 @@ func (m *Metrics) scrapeMiniMax(s *store.Store, staleThreshold time.Duration) {
 			if v.ResetAt != nil && !v.ResetAt.IsZero() {
 				m.quotaResetTimestamp.With(labels).Set(float64(v.ResetAt.Unix()))
 			}
+
+			// MiniMax plans carry a weekly window alongside the rolling
+			// five-hour one, and the weekly window is the one that burns over
+			// days. The store already reads it; exporting only the per-model
+			// values left long-horizon exhaustion unobservable, so an account
+			// could sit at 80% of its week with every quota rule silent.
+			// Accounts predating the weekly window report zeros and are
+			// skipped: a flat zero would read as permanently healthy.
+			if v.HasWeeklyQuota {
+				weeklyLabels := prometheus.Labels{
+					"provider":   method,
+					"quota_type": weeklyQuotaType(v.ModelName),
+					"account_id": accountID,
+				}
+				m.quotaUtilization.With(weeklyLabels).Set(v.WeeklyUsedPercent)
+				if v.WeeklyResetAt != nil && !v.WeeklyResetAt.IsZero() {
+					m.quotaResetTimestamp.With(weeklyLabels).Set(float64(v.WeeklyResetAt.Unix()))
+				}
+			}
 		}
 	}
+}
+
+// weeklyQuotaType names the weekly companion of a per-model quota. Keeping both
+// windows in the same label dimension is deliberate: a rule can then select or
+// exclude either one without knowing the model set, which changes as the
+// provider adds models. Adding a separate label instead would change the
+// identity of the existing series and break rules already deployed against it.
+func weeklyQuotaType(modelName string) string {
+	return "weekly_" + modelName
 }
 
 func (m *Metrics) scrapeAntigravity(s *store.Store, staleThreshold time.Duration) {
@@ -569,6 +614,75 @@ func (m *Metrics) scrapeOpenRouter(s *store.Store, staleThreshold time.Duration)
 			"unit":       "usd",
 		}).Set(*snap.LimitRemaining)
 	}
+}
+
+func (m *Metrics) scrapeMoonshot(s *store.Store, staleThreshold time.Duration) {
+	method := "moonshot"
+
+	snap, err := s.QueryLatestMoonshot()
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+		return
+	}
+	if snap == nil {
+		return
+	}
+
+	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
+
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_available",
+	}).Set(snap.AvailableBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_voucher",
+	}).Set(snap.VoucherBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       "cny_cash",
+	}).Set(snap.CashBalance)
+}
+
+func (m *Metrics) scrapeDeepSeek(s *store.Store, staleThreshold time.Duration) {
+	method := "deepseek"
+
+	snap, err := s.QueryLatestDeepSeek()
+	if err != nil {
+		m.scrapeErrorsTotal.WithLabelValues(method, "query_failed").Inc()
+		return
+	}
+	if snap == nil {
+		return
+	}
+
+	m.recordLastCycleAge(method, defaultAccountID, snap.CapturedAt, staleThreshold)
+
+	unitPrefix := "cny"
+	if snap.Currency == "USD" {
+		unitPrefix = "usd"
+	} else if snap.Currency != "CNY" && snap.Currency != "" {
+		unitPrefix = snap.Currency
+	}
+
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_total",
+	}).Set(snap.TotalBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_granted",
+	}).Set(snap.GrantedBalance)
+	m.creditsBalance.With(prometheus.Labels{
+		"provider":   method,
+		"account_id": defaultAccountID,
+		"unit":       unitPrefix + "_topped_up",
+	}).Set(snap.ToppedUpBalance)
 }
 
 // RecordCycleCompleted increments the successful-poll counter.

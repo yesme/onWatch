@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/onllm-dev/onwatch/v2/internal/api"
+	"github.com/onllm-dev/onwatch/v2/internal/service"
 )
 
 // ANSI colors
@@ -70,10 +71,15 @@ func runSetup() error {
 		if allProvidersConfigured(existing) {
 			fmt.Printf("  %sinfo%s  Existing .env found -- all providers configured\n", colorBlue, colorReset)
 			fmt.Printf("  %sTo reconfigure, delete %s and run setup again.%s\n", colorDim, envFile, colorReset)
+			offerAutostart(reader)
 			return nil
 		}
 		if anyProviderConfigured(existing) {
-			return addMissingProviders(reader, envFile, existing)
+			err := addMissingProviders(reader, envFile, existing)
+			if err == nil {
+				offerAutostart(reader)
+			}
+			return err
 		}
 		// .env exists but no providers - remove and start fresh
 		fmt.Printf("  %swarn%s  Existing .env found but no API keys configured\n", colorYellow, colorReset)
@@ -91,6 +97,7 @@ func runSetup() error {
 	}
 
 	printSummary(cfg)
+	offerAutostart(reader)
 	printNextSteps()
 
 	return nil
@@ -495,6 +502,9 @@ func printNextSteps() {
 	fmt.Printf("    %sonwatch stop%s      # Stop\n", colorCyan, colorReset)
 	fmt.Printf("    %sonwatch status%s    # Status\n", colorCyan, colorReset)
 	fmt.Printf("    %sonwatch --debug%s   # Run in foreground\n", colorCyan, colorReset)
+	if service.Supported() {
+		fmt.Printf("    %sonwatch service status%s  # Auto-start at login\n", colorCyan, colorReset)
+	}
 	fmt.Println()
 }
 

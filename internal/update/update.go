@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/onllm-dev/onwatch/v2/internal/service"
 )
 
 const (
@@ -27,12 +29,12 @@ const (
 	// our fallback when the API returns 403 (see issue #81).
 	githubReleasesRedirectURL = "https://github.com/onllm-dev/onwatch/releases/latest"
 	downloadBaseURL           = "https://github.com/onllm-dev/onwatch/releases/download"
-	defaultCacheTTL       = 1 * time.Hour
-	downloadTimeout       = 10 * time.Minute
-	downloadRetryBackoff  = 2 * time.Second
-	downloadMaxAttempts   = 2
-	checkRetryBackoff     = 2 * time.Second
-	checkMaxAttempts      = 3
+	defaultCacheTTL           = 1 * time.Hour
+	downloadTimeout           = 10 * time.Minute
+	downloadRetryBackoff      = 2 * time.Second
+	downloadMaxAttempts       = 2
+	checkRetryBackoff         = 2 * time.Second
+	checkMaxAttempts          = 3
 )
 
 var (
@@ -545,6 +547,15 @@ func replaceBinary(exePath, tmpPath string, logger *slog.Logger) error {
 	return nil
 }
 
+// launchd hooks, indirected so tests never shell out to launchctl or restart a
+// developer's real onWatch agent.
+var (
+	launchdSupported = service.Supported
+	launchdInstalled = service.IsInstalled
+	launchdLoaded    = service.Loaded
+	launchdRestart   = service.Restart
+)
+
 // IsSystemd returns true if the process is managed by systemd.
 // Detected via INVOCATION_ID environment variable which systemd sets for all services.
 func IsSystemd() bool {
@@ -685,6 +696,22 @@ func (u *Updater) Restart() error {
 		return nil // unreachable
 	}
 
+	// launchd (macOS) owns the process when the auto-start agent is installed.
+	// Spawning a replacement ourselves would orphan the job: launchd would
+	// still believe it is stopped and nothing would restart onWatch after a
+	// crash. Hand the restart to launchctl instead.
+	if launchdSupported() && launchdInstalled() && launchdLoaded() {
+		u.logger.Info("Running under launchd - triggering agent restart", "label", service.Label)
+		if err := launchdRestart(); err == nil {
+			// kickstart -k kills this process; the signal handler exits 0 and
+			// launchd starts the new binary. Wait, then exit as a fallback.
+			sleepFn(30 * time.Second)
+			exitFn(0)
+			return nil
+		}
+		u.logger.Warn("launchctl kickstart failed, falling back to spawn")
+	}
+
 	// Standalone mode: spawn new process
 	u.mu.Lock()
 	exePath := u.lastAppliedPath
@@ -701,6 +728,16 @@ func (u *Updater) Restart() error {
 
 	args := filterArgs(os.Args[1:])
 	cmd := execCommand(exePath, args...)
+	// The daemon that applies a dashboard-triggered update carries
+	// _ONWATCH_DAEMON=1. Inheriting it tells the replacement it is already the
+	// daemon child, so it neither stops the old instance nor backgrounds
+	// itself - it just loses the port fight and dies, leaving the old binary
+	// running with nothing to exit it.
+	spawnEnv := cmd.Env
+	if spawnEnv == nil {
+		spawnEnv = os.Environ()
+	}
+	cmd.Env = daemonSpawnEnv(spawnEnv)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -735,6 +772,19 @@ func (u *Updater) fallbackSystemctlRestart() error {
 
 // filterArgs removes "update" and "--update" from args so the new process
 // starts as a server, not as another update command.
+// daemonSpawnEnv strips the markers that tell a process it is already running
+// as the daemon, so a spawned replacement backgrounds itself properly.
+func daemonSpawnEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "_ONWATCH_DAEMON=") || strings.HasPrefix(kv, "_ONWATCH_LAUNCHD=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 func filterArgs(args []string) []string {
 	var filtered []string
 	for _, a := range args {

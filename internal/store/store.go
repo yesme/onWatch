@@ -515,6 +515,39 @@ func (s *Store) createTables() error {
 			peak_usage REAL NOT NULL DEFAULT 0,
 			total_delta REAL NOT NULL DEFAULT 0
 		);
+		CREATE TABLE IF NOT EXISTS moonshot_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at DATETIME NOT NULL,
+			available_balance REAL DEFAULT 0,
+			voucher_balance REAL DEFAULT 0,
+			cash_balance REAL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS moonshot_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_type TEXT NOT NULL,
+			cycle_start DATETIME NOT NULL,
+			cycle_end DATETIME,
+			peak_usage REAL DEFAULT 0,
+			total_delta REAL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS deepseek_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at DATETIME NOT NULL,
+			is_available INTEGER NOT NULL DEFAULT 1,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			total_balance REAL DEFAULT 0,
+			granted_balance REAL DEFAULT 0,
+			topped_up_balance REAL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS deepseek_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_type TEXT NOT NULL,
+			currency TEXT NOT NULL DEFAULT 'CNY',
+			cycle_start DATETIME NOT NULL,
+			cycle_end DATETIME,
+			peak_usage REAL DEFAULT 0,
+			total_delta REAL DEFAULT 0
+		);
 
 		-- Antigravity indexes
 		CREATE INDEX IF NOT EXISTS idx_antigravity_snapshots_captured ON antigravity_snapshots(captured_at);
@@ -744,6 +777,43 @@ func (s *Store) createTables() error {
 		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_name_start ON kimi_reset_cycles(quota_name, cycle_start);
 		CREATE INDEX IF NOT EXISTS idx_kimi_cycles_name_active ON kimi_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 		CREATE INDEX IF NOT EXISTS idx_kimi_snapshots_account ON kimi_snapshots(account_id, captured_at);
+
+		-- OpenCode Go tables
+		CREATE TABLE IF NOT EXISTS opencode_snapshots (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			captured_at TEXT NOT NULL,
+			raw_json TEXT NOT NULL DEFAULT '',
+			account_type TEXT NOT NULL DEFAULT '',
+			plan_name TEXT NOT NULL DEFAULT '',
+			quota_count INTEGER NOT NULL DEFAULT 0
+		);
+
+		CREATE TABLE IF NOT EXISTS opencode_quota_values (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			snapshot_id INTEGER NOT NULL,
+			quota_name TEXT NOT NULL,
+			used REAL NOT NULL DEFAULT 0,
+			limit_value REAL NOT NULL DEFAULT 0,
+			utilization REAL NOT NULL DEFAULT 0,
+			format TEXT NOT NULL DEFAULT 'percent',
+			resets_at TEXT,
+			FOREIGN KEY (snapshot_id) REFERENCES opencode_snapshots(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS opencode_reset_cycles (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			quota_name TEXT NOT NULL,
+			cycle_start TEXT NOT NULL,
+			cycle_end TEXT,
+			resets_at TEXT,
+			peak_utilization REAL NOT NULL DEFAULT 0,
+			total_delta REAL NOT NULL DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_opencode_snapshots_captured ON opencode_snapshots(captured_at);
+		CREATE INDEX IF NOT EXISTS idx_opencode_quota_values_snapshot ON opencode_quota_values(snapshot_id);
+		CREATE INDEX IF NOT EXISTS idx_opencode_cycles_name_start ON opencode_reset_cycles(quota_name, cycle_start);
+		CREATE INDEX IF NOT EXISTS idx_opencode_cycles_name_active ON opencode_reset_cycles(quota_name, cycle_end) WHERE cycle_end IS NULL;
 
 		-- API integrations telemetry ingestion tables
 		CREATE TABLE IF NOT EXISTS api_integration_usage_events (

@@ -2784,8 +2784,10 @@ func TestWriteAnthropicCredentials_CreatesBackup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestDetectCodexCredentials_EmptyAuthFile(t *testing.T) {
+	isolateOpenCodeEnv(t)
 	dir := t.TempDir()
 	t.Setenv("CODEX_HOME", dir)
+	t.Setenv("HOME", t.TempDir())
 
 	// Write an auth file with all empty fields
 	authData := `{"OPENAI_API_KEY":"","tokens":{"access_token":"","refresh_token":"","id_token":"","account_id":""}}`

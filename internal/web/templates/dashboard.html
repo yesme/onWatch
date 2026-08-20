@@ -119,6 +119,12 @@
         {{else if eq .CurrentProvider "openrouter"}}
         <!-- OpenRouter quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-openrouter" data-provider="openrouter"></div>
+        {{else if eq .CurrentProvider "moonshot"}}
+        <!-- Moonshot quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-moonshot" data-provider="moonshot"></div>
+        {{else if eq .CurrentProvider "deepseek"}}
+        <!-- DeepSeek quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-deepseek" data-provider="deepseek"></div>
         {{else if eq .CurrentProvider "gemini"}}
         <!-- Gemini quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-gemini" data-provider="gemini"></div>
@@ -131,6 +137,9 @@
         {{else if eq .CurrentProvider "kimi"}}
         <!-- Kimi Code quota cards (dynamically populated by JS) -->
         <div class="quota-grid" id="quota-grid-kimi" data-provider="kimi"></div>
+        {{else if eq .CurrentProvider "opencode"}}
+        <!-- OpenCode Go quota cards (dynamically populated by JS) -->
+        <div class="quota-grid" id="quota-grid-opencode" data-provider="opencode"></div>
         {{else if eq .CurrentProvider "api-integrations"}}
         <div class="api-integrations-dashboard" id="api-integrations-dashboard" data-provider="api-integrations">
             <div class="quota-grid" id="api-integrations-grid"></div>
@@ -485,7 +494,7 @@
         </section>
         {{end}}
 
-        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor")}}
+        {{if and (ne .CurrentProvider "both") (ne .CurrentProvider "api-integrations") (ne .CurrentProvider "cursor") (ne .CurrentProvider "opencode")}}
         <section class="sessions-section" id="sessions-section">
             <header class="section-header">
                 <h3 class="section-title">
@@ -537,6 +546,14 @@
                             <th data-sort-key="sub" role="button" tabindex="0">Credits Used <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
                             <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "moonshot"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Balance Drop <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
+                            {{else if eq .CurrentProvider "deepseek"}}
+                            <th data-sort-key="sub" role="button" tabindex="0">Balance Drop <span class="sort-arrow"></span></th>
+                            <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
+                            <th data-sort-key="tool" role="button" tabindex="0">Snapshots <span class="sort-arrow"></span></th>
                             {{else if eq .CurrentProvider "grok"}}
                             <th data-sort-key="sub" role="button" tabindex="0">Credits Used <span class="sort-arrow"></span></th>
                             <th data-sort-key="search" role="button" tabindex="0">Session Δ <span class="sort-arrow"></span></th>
@@ -566,6 +583,10 @@
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else if eq .CurrentProvider "openrouter"}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "moonshot"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
+                            {{else if eq .CurrentProvider "deepseek"}}
+                            <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{else}}
                             <td colspan="7" class="empty-state">No sessions recorded yet.</td>
                             {{end}}
@@ -588,7 +609,7 @@
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                         <path d="M3 3v5h5"/>
                     </svg>
-                    {{if eq .CurrentProvider "cursor"}}Usage Samples{{else}}Logging History{{end}}
+                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Usage Samples{{else}}Logging History{{end}}
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
@@ -602,7 +623,7 @@
                         </div>
                     </div>
                     <div class="filter-group">
-                        <span class="filter-label">{{if eq .CurrentProvider "cursor"}}Bucket{{else}}Group{{end}}</span>
+                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Bucket{{else}}Group{{end}}</span>
                         <div class="filter-pills" id="cycles-bucket-pills" role="group" aria-label="Polling grouping window">
                             <!-- Populated dynamically from poll interval -->
                         </div>
@@ -628,14 +649,14 @@
                     </thead>
                     <tbody id="cycles-tbody">
                         <tr>
-                            <td colspan="5" class="empty-state">{{if eq .CurrentProvider "cursor"}}No usage samples yet. Cursor tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
+                            <td colspan="5" class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}No usage samples yet. Tracking begins after the first successful sync.{{else}}No polling data yet. Tracking begins on first poll.{{end}}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
                 <span class="table-info" id="cycles-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if eq .CurrentProvider "cursor"}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Δ = change since previous sample{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="cycles-pagination"></div>
             </div>
         </section>
@@ -646,11 +667,11 @@
                     <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 20V10M18 20V4M6 20v-4"/>
                     </svg>
-                    {{if eq .CurrentProvider "cursor"}}Billing Cycle Overview{{else}}Cycle Overview{{end}}
+                    {{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Billing Cycle Overview{{else}}Cycle Overview{{end}}
                 </h3>
                 <div class="cycles-filters-inline">
                     <div class="filter-group">
-                        <span class="filter-label">{{if eq .CurrentProvider "cursor"}}Quota{{else}}Period{{end}}</span>
+                        <span class="filter-label">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Quota{{else}}Period{{end}}</span>
                         <div class="filter-pills" id="overview-period-pills" role="group" aria-label="Renewal period"></div>
                     </div>
                     <select class="page-size-select" id="overview-page-size" aria-label="Rows per page">
@@ -665,13 +686,13 @@
                 <table class="data-table" id="overview-table">
                     <thead id="overview-thead"><tr><th>Loading...</th></tr></thead>
                     <tbody id="overview-tbody">
-                        <tr><td class="empty-state">{{if eq .CurrentProvider "cursor"}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
+                        <tr><td class="empty-state">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Select a quota to compare monthly billing cycles.{{else}}Select a renewal period to view cross-quota data.{{end}}</td></tr>
                     </tbody>
                 </table>
             </div>
             <div class="table-footer">
                 <span class="table-info" id="overview-info">Showing 0-0 of 0</span>
-                <span class="table-legend">{{if eq .CurrentProvider "cursor"}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
+                <span class="table-legend">{{if or (eq .CurrentProvider "cursor") (eq .CurrentProvider "opencode")}}Monthly cycle comparison by quota{{else}}⚡ = consumption rate per hour{{end}}</span>
                 <div class="table-pagination" id="overview-pagination"></div>
             </div>
         </section>

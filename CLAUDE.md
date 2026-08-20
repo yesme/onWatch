@@ -1,10 +1,10 @@
 # onWatch
 
-Go CLI for AI quota tracking. Polls 9 providers → SQLite → Material Design 3 dashboard.
+Go CLI for AI quota tracking. Polls 15 providers → SQLite → Material Design 3 dashboard.
 
 ## Task
 
-Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity, Gemini, Cursor.
+Background daemon (<50MB RAM) tracking: Anthropic, Synthetic, Z.ai, Copilot, Codex, MiniMax, Antigravity, Gemini, Cursor, Kimi Code, Grok, Moonshot, DeepSeek, OpenRouter, OpenCode Go.
 
 ## Code Map
 
@@ -42,6 +42,16 @@ internal/
 go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 ```
 
+**Nix (alternative to app.sh, for build + dev shell):**
+
+```bash
+nix build .#onwatch         # Pure-Go static binary -> ./result/bin/onwatch
+nix run .#onwatch           # Build + run
+nix develop                 # Shell with go/gopls/gotools/gofumpt (or `direnv allow`)
+```
+
+On `go.sum` changes, update `vendorHash` in `flake.nix` (run `nix build .#onwatch`, paste the `got: sha256-...` from the error). Flake tracks `nixos-unstable` because `go.mod` requires Go >= 1.25.7.
+
 ## Guardrails
 
 | Rule | Reason |
@@ -64,7 +74,7 @@ go test -race ./... && go vet ./...   # Pre-commit (mandatory)
 5. Add to `internal/web/handlers.go` endpoints
 6. Update dashboard JS in `internal/web/static/app.js`
 
-**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md, CURSOR_SETUP.md)
+**API Docs:** See `docs/` for provider-specific setup (COPILOT_SETUP.md, CODEX_SETUP.md, ANTIGRAVITY_SETUP.md, GEMINI_SETUP.md, CURSOR_SETUP.md, KIMI_SETUP.md, GROK_SETUP.md, MOONSHOT_SETUP.md, DEEPSEEK_SETUP.md, OPENCODE_SETUP.md)
 
 **Containers:** `IsDockerEnvironment()` in `config.go` detects Docker/K8s. Containers run foreground only.
 

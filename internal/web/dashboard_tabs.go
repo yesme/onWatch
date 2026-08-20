@@ -39,7 +39,13 @@ func defaultProviderTabLabel(key string) string {
 	case "grok":
 		return "Grok"
 	case "kimi":
-		return "Kimi Code"
+		return "Kimi"
+	case "opencode":
+		return "OpenCode"
+	case "moonshot":
+		return "Moonshot"
+	case "deepseek":
+		return "DeepSeek"
 	case "api-integrations":
 		return "API Integrations"
 	case "both":

@@ -91,9 +91,12 @@ type Handler struct {
 	minimaxTracker     *tracker.MiniMaxTracker
 	geminiTracker      *tracker.GeminiTracker
 	openrouterTracker  *tracker.OpenRouterTracker
+	moonshotTracker    *tracker.MoonshotTracker
+	deepseekTracker    *tracker.DeepSeekTracker
 	cursorTracker      *tracker.CursorTracker
 	grokTracker        *tracker.GrokTracker
 	kimiTracker        *tracker.KimiTracker
+	opencodeTracker    *tracker.OpenCodeTracker
 	updater            *update.Updater
 	notifier           Notifier
 	agentManager       ProviderAgentController
@@ -760,6 +763,16 @@ func (h *Handler) SetOpenRouterTracker(t *tracker.OpenRouterTracker) {
 	h.openrouterTracker = t
 }
 
+// SetMoonshotTracker sets the Moonshot tracker for usage summary enrichment.
+func (h *Handler) SetMoonshotTracker(t *tracker.MoonshotTracker) {
+	h.moonshotTracker = t
+}
+
+// SetDeepSeekTracker sets the DeepSeek tracker for usage summary enrichment.
+func (h *Handler) SetDeepSeekTracker(t *tracker.DeepSeekTracker) {
+	h.deepseekTracker = t
+}
+
 // SetCursorTracker sets the Cursor tracker for usage summary enrichment.
 func (h *Handler) SetCursorTracker(t *tracker.CursorTracker) {
 	h.cursorTracker = t
@@ -1103,10 +1116,13 @@ func providerCatalog() []providerCatalogItem {
 		{Key: "antigravity", Name: "Antigravity", Description: "Antigravity model usage tracking", AutoDetectable: true},
 		{Key: "minimax", Name: "MiniMax", Description: "MiniMax Coding Plan usage tracking"},
 		{Key: "openrouter", Name: "OpenRouter", Description: "OpenRouter credits usage tracking"},
+		{Key: "moonshot", Name: "Moonshot", Description: "Moonshot Kimi balance tracking"},
+		{Key: "deepseek", Name: "DeepSeek", Description: "DeepSeek API balance tracking"},
 		{Key: "gemini", Name: "Gemini", Description: "Google Gemini CLI quota tracking", AutoDetectable: true},
 		{Key: "cursor", Name: "Cursor", Description: "Cursor usage and quota tracking", AutoDetectable: true},
 		{Key: "grok", Name: "Grok", Description: "Grok (xAI) usage tracking", AutoDetectable: true},
 		{Key: "kimi", Name: "Kimi Code", Description: "Kimi Code CLI OAuth quota tracking", AutoDetectable: true},
+		{Key: "opencode", Name: "OpenCode Go", Description: "OpenCode Go quota tracking", AutoDetectable: false},
 	}
 }
 
@@ -1162,6 +1178,10 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 		return false
 	case "openrouter":
 		return strings.TrimSpace(h.config.OpenRouterAPIKey) != ""
+	case "moonshot":
+		return strings.TrimSpace(h.config.MoonshotAPIKey) != ""
+	case "deepseek":
+		return strings.TrimSpace(h.config.DeepSeekAPIKey) != ""
 	case "gemini":
 		return h.config.GeminiEnabled
 	case "cursor":
@@ -1179,6 +1199,8 @@ func (h *Handler) isProviderConfigured(provider string) bool {
 			return true
 		}
 		return api.DetectKimiCredentials(h.logger) != nil
+	case "opencode":
+		return h.config != nil && strings.TrimSpace(h.config.OpenCodeGoWorkspaceID) != "" && strings.TrimSpace(h.config.OpenCodeGoAuthCookie) != ""
 	default:
 		return false
 	}
@@ -1327,11 +1349,15 @@ func applyProviderConfig(dst, src *config.Config) {
 	dst.CodexAutoToken = src.CodexAutoToken
 	dst.CodexAutoSource = src.CodexAutoSource
 	dst.OpenCodeEnabled = src.OpenCodeEnabled
+	dst.OpenCodeGoWorkspaceID = src.OpenCodeGoWorkspaceID
+	dst.OpenCodeGoAuthCookie = src.OpenCodeGoAuthCookie
 	dst.AntigravityBaseURL = src.AntigravityBaseURL
 	dst.AntigravityCSRFToken = src.AntigravityCSRFToken
 	dst.AntigravityEnabled = src.AntigravityEnabled
 	dst.MiniMaxAPIKey = src.MiniMaxAPIKey
 	dst.OpenRouterAPIKey = src.OpenRouterAPIKey
+	dst.MoonshotAPIKey = src.MoonshotAPIKey
+	dst.DeepSeekAPIKey = src.DeepSeekAPIKey
 	dst.GeminiEnabled = src.GeminiEnabled
 	dst.GeminiAutoToken = src.GeminiAutoToken
 	dst.GrokToken = src.GrokToken
@@ -1349,9 +1375,10 @@ func applyProviderConfig(dst, src *config.Config) {
 // and replaced with a "{key}_set: true" flag so the UI can show status
 // without exposing the actual values.
 var providerSecretKeys = map[string]bool{
-	"api_key":    true,
-	"token":      true,
-	"csrf_token": true,
+	"api_key":     true,
+	"token":       true,
+	"csrf_token":  true,
+	"auth_cookie": true,
 }
 
 // stripProviderSecrets removes sensitive field values from provider_settings
@@ -1412,6 +1439,9 @@ var providerEnumFields = map[string]map[string][]string{
 		"display_mode": {"usage", "available"},
 	},
 	"cursor": {
+		"display_mode": {"usage", "available"},
+	},
+	"opencode": {
 		"display_mode": {"usage", "available"},
 	},
 }
@@ -1493,6 +1523,16 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 			cfg.OpenRouterAPIKey = key
 		}
 	}
+	if s := provSettings["moonshot"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.MoonshotAPIKey = key
+		}
+	}
+	if s := provSettings["deepseek"]; s != nil {
+		if key, _ := s["api_key"].(string); key != "" {
+			cfg.DeepSeekAPIKey = key
+		}
+	}
 	if s := provSettings["antigravity"]; s != nil {
 		if url, _ := s["base_url"].(string); url != "" {
 			cfg.AntigravityBaseURL = url
@@ -1510,6 +1550,12 @@ func ApplyProviderSettingsFromDB(st *store.Store, cfg *config.Config, logger *sl
 	if s := provSettings["opencode"]; s != nil {
 		if enabled, ok := s["enabled"].(bool); ok {
 			cfg.OpenCodeEnabled = enabled
+		}
+		if id, _ := s["workspace_id"].(string); id != "" {
+			cfg.OpenCodeGoWorkspaceID = id
+		}
+		if cookie, _ := s["auth_cookie"].(string); cookie != "" {
+			cfg.OpenCodeGoAuthCookie = cookie
 		}
 	}
 
@@ -1747,8 +1793,12 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	hasAntigravity := hasVisibleProvider("antigravity")
 	hasMiniMax := hasVisibleProvider("minimax")
 	hasOpenRouter := hasVisibleProvider("openrouter")
+	hasMoonshot := hasVisibleProvider("moonshot")
+	hasDeepSeek := hasVisibleProvider("deepseek")
 	hasToolsVisible := hasVisibleProvider("api-integrations")
 	_ = hasOpenRouter // used by template if needed
+	_ = hasMoonshot
+	_ = hasDeepSeek
 	data := map[string]interface{}{
 		"Title":           "Dashboard",
 		"Providers":       providers,
@@ -1803,6 +1853,10 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentMiniMax(w, r)
 	case "openrouter":
 		h.currentOpenRouter(w, r)
+	case "moonshot":
+		h.currentMoonshot(w, r)
+	case "deepseek":
+		h.currentDeepSeek(w, r)
 	case "gemini":
 		h.currentGemini(w, r)
 	case "cursor":
@@ -1811,6 +1865,8 @@ func (h *Handler) Current(w http.ResponseWriter, r *http.Request) {
 		h.currentGrok(w, r)
 	case "kimi":
 		h.currentKimi(w, r)
+	case "opencode":
+		h.currentOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2246,6 +2302,12 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
 		response["openrouter"] = h.buildOpenRouterCurrent()
 	}
+	if h.config.HasProvider("moonshot") && providerTelemetryEnabled(visibility, "moonshot") {
+		response["moonshot"] = h.buildMoonshotCurrent()
+	}
+	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") {
+		response["deepseek"] = h.buildDeepSeekCurrent()
+	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = h.buildGeminiCurrent()
 	}
@@ -2257,6 +2319,9 @@ func (h *Handler) currentBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
 		response["kimi"] = h.buildKimiCurrent()
+	}
+	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") {
+		response["opencode"] = h.buildOpenCodeCurrent()
 	}
 	respondJSON(w, http.StatusOK, response)
 }
@@ -2596,6 +2661,10 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyMiniMax(w, r)
 	case "openrouter":
 		h.historyOpenRouter(w, r)
+	case "moonshot":
+		h.historyMoonshot(w, r)
+	case "deepseek":
+		h.historyDeepSeek(w, r)
 	case "gemini":
 		h.historyGemini(w, r)
 	case "cursor":
@@ -2604,6 +2673,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		h.historyGrok(w, r)
 	case "kimi":
 		h.historyKimi(w, r)
+	case "opencode":
+		h.historyOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -2871,6 +2942,52 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if h.config.HasProvider("moonshot") && providerTelemetryEnabled(visibility, "moonshot") && h.store != nil {
+		snapshots, err := h.store.QueryMoonshotRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			msData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, s := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": s.CapturedAt.Format(time.RFC3339),
+					"available_balance": s.AvailableBalance,
+					"voucher_balance": s.VoucherBalance,
+					"cash_balance": s.CashBalance,
+				}
+				msData = append(msData, entry)
+			}
+			response["moonshot"] = msData
+		}
+	}
+
+	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") && h.store != nil {
+		snapshots, err := h.store.QueryDeepSeekRange(start, now)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			dsData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, s := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt":        s.CapturedAt.Format(time.RFC3339),
+					"available":         s.IsAvailable,
+					"currency":          s.Currency,
+					"total_balance":     s.TotalBalance,
+					"granted_balance":   s.GrantedBalance,
+					"topped_up_balance": s.ToppedUpBalance,
+				}
+				dsData = append(dsData, entry)
+			}
+			response["deepseek"] = dsData
+		}
+	}
+
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") && h.store != nil {
 		snapshots, err := h.store.QueryGeminiRange(start, now)
 		if err == nil {
@@ -2970,6 +3087,28 @@ func (h *Handler) historyBoth(w http.ResponseWriter, r *http.Request) {
 				kimiData = append(kimiData, entry)
 			}
 			response["kimi"] = kimiData
+		}
+	}
+
+	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") && h.store != nil {
+		snapshots, err := h.store.QueryOpenCodeRange(start, now, 200)
+		if err == nil {
+			step := downsampleStep(len(snapshots), maxChartPoints)
+			last := len(snapshots) - 1
+			opencodeData := make([]map[string]interface{}, 0, min(len(snapshots), maxChartPoints))
+			for i, snap := range snapshots {
+				if step > 1 && i != 0 && i != last && i%step != 0 {
+					continue
+				}
+				entry := map[string]interface{}{
+					"capturedAt": snap.CapturedAt.Format(time.RFC3339),
+				}
+				for _, q := range snap.Quotas {
+					entry[q.Name] = q.Utilization
+				}
+				opencodeData = append(opencodeData, entry)
+			}
+			response["opencode"] = opencodeData
 		}
 	}
 
@@ -3567,6 +3706,10 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		h.cyclesMiniMax(w, r)
 	case "openrouter":
 		h.cyclesOpenRouter(w, r)
+	case "moonshot":
+		h.cyclesMoonshot(w, r)
+	case "deepseek":
+		h.cyclesDeepSeek(w, r)
 	case "gemini":
 		h.cyclesGemini(w, r)
 	case "cursor":
@@ -3575,6 +3718,8 @@ func (h *Handler) Cycles(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
 	case "kimi":
 		respondJSON(w, http.StatusOK, map[string]interface{}{"cycles": []interface{}{}})
+	case "opencode":
+		h.cyclesOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3713,6 +3858,49 @@ func (h *Handler) cyclesBoth(w http.ResponseWriter, r *http.Request) {
 			"provider":   "openrouter",
 			"quotaNames": []string{"credits"},
 			"cycles":     orCycles,
+		}
+	}
+
+	if h.config.HasProvider("moonshot") {
+		quotaType := "balance"
+		var msCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
+			msCycles = append(msCycles, moonshotCycleToMap(active))
+		}
+		if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				msCycles = append(msCycles, moonshotCycleToMap(c))
+			}
+		}
+		response["moonshot"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "moonshot",
+			"quotaNames": []string{"balance"},
+			"cycles":     msCycles,
+		}
+	}
+
+	if h.config.HasProvider("deepseek") {
+		quotaType := "balance"
+		var dsCycles []map[string]interface{}
+		
+		// Use CNY as default if not specified elsewhere. DeepSeek could use USD, 
+		// but tracking one primary currency for UI is sufficient for summary.
+		currency := "CNY"
+		
+		if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
+			dsCycles = append(dsCycles, deepseekCycleToMap(active))
+		}
+		if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
+			for _, c := range history {
+				dsCycles = append(dsCycles, deepseekCycleToMap(c))
+			}
+		}
+		response["deepseek"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "deepseek",
+			"quotaNames": []string{"balance"},
+			"cycles":     dsCycles,
 		}
 	}
 
@@ -3890,6 +4078,10 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		h.summaryMiniMax(w, r)
 	case "openrouter":
 		h.summaryOpenRouter(w, r)
+	case "moonshot":
+		h.summaryMoonshot(w, r)
+	case "deepseek":
+		h.summaryDeepSeek(w, r)
 	case "gemini":
 		h.summaryGemini(w, r)
 	case "cursor":
@@ -3899,6 +4091,8 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
 	case "kimi":
 		respondJSON(w, http.StatusOK, map[string]interface{}{"summaries": []interface{}{}})
+	case "opencode":
+		h.summaryOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -3931,6 +4125,13 @@ func (h *Handler) summaryBoth(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.config.HasProvider("openrouter") {
 		response["openrouter"] = h.buildOpenRouterSummaryMap()
+	}
+	if h.config.HasProvider("moonshot") {
+		response["moonshot"] = h.buildMoonshotSummaryMap()
+	}
+	if h.config.HasProvider("deepseek") {
+		// DeepSeek could use either currency. Use CNY by default for summary view unless we know better
+		response["deepseek"] = h.buildDeepSeekSummaryMap("CNY")
 	}
 	if h.config.HasProvider("anthropic") {
 		response["anthropic"] = h.buildAnthropicSummaryMap()
@@ -4552,6 +4753,12 @@ func (h *Handler) sessionsBoth(w http.ResponseWriter, r *http.Request) {
 	if h.config.HasProvider("openrouter") {
 		response["openrouter"] = buildSessionList("openrouter")
 	}
+	if h.config.HasProvider("moonshot") {
+		response["moonshot"] = buildSessionList("moonshot")
+	}
+	if h.config.HasProvider("deepseek") {
+		response["deepseek"] = buildSessionList("deepseek")
+	}
 
 	respondJSON(w, http.StatusOK, response)
 }
@@ -4691,6 +4898,10 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsMiniMax(w, r, rangeDur)
 	case "openrouter":
 		h.insightsOpenRouter(w, r, rangeDur)
+	case "moonshot":
+		h.insightsMoonshot(w, r, rangeDur)
+	case "deepseek":
+		h.insightsDeepSeek(w, r, rangeDur)
 	case "gemini":
 		h.insightsGemini(w, r, rangeDur)
 	case "cursor":
@@ -4699,6 +4910,8 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 		h.insightsGrok(w, r, rangeDur)
 	case "kimi":
 		h.insightsKimi(w, r, rangeDur)
+	case "opencode":
+		h.insightsOpenCode(w, r, rangeDur)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -4774,6 +4987,13 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	if h.config.HasProvider("openrouter") && providerTelemetryEnabled(visibility, "openrouter") {
 		response["openrouter"] = h.buildOpenRouterInsights(hidden)
 	}
+	if h.config.HasProvider("moonshot") && providerTelemetryEnabled(visibility, "moonshot") {
+		response["moonshot"] = h.buildMoonshotInsights(hidden)
+	}
+	if h.config.HasProvider("deepseek") && providerTelemetryEnabled(visibility, "deepseek") {
+		// Use CNY for deepseek overall insights if not explicitly asked
+		response["deepseek"] = h.buildDeepSeekInsights("CNY", hidden)
+	}
 	if h.config.HasProvider("gemini") && providerTelemetryEnabled(visibility, "gemini") {
 		response["gemini"] = insightsResponse{Stats: []insightStat{}, Insights: []insightItem{}}
 	}
@@ -4785,6 +5005,9 @@ func (h *Handler) insightsBoth(w http.ResponseWriter, r *http.Request, rangeDur 
 	}
 	if h.config.HasProvider("kimi") && providerTelemetryEnabled(visibility, "kimi") {
 		response["kimi"] = h.buildKimiInsights(hidden)
+	}
+	if h.config.HasProvider("opencode") && providerTelemetryEnabled(visibility, "opencode") {
+		response["opencode"] = h.buildOpenCodeInsights(hidden, rangeDur)
 	}
 
 	respondJSON(w, http.StatusOK, response)
@@ -6740,7 +6963,12 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "failed to save provider settings")
 			return
 		}
-		h.logger.Info("Provider settings updated", "providers", provSettings)
+		updatedProviders := make([]string, 0, len(provSettings))
+		for name := range provSettings {
+			updatedProviders = append(updatedProviders, name)
+		}
+		sort.Strings(updatedProviders)
+		h.logger.Info("Provider settings updated", "providers", updatedProviders)
 		// Strip sensitive fields before returning to client
 		stripProviderSecrets(existing)
 		result["provider_settings"] = existing
@@ -7182,6 +7410,10 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewMiniMax(w, r)
 	case "openrouter":
 		h.cycleOverviewOpenRouter(w, r)
+	case "moonshot":
+		h.cycleOverviewMoonshot(w, r)
+	case "deepseek":
+		h.cycleOverviewDeepSeek(w, r)
 	case "gemini":
 		h.cycleOverviewGemini(w, r)
 	case "cursor":
@@ -7190,6 +7422,8 @@ func (h *Handler) CycleOverview(w http.ResponseWriter, r *http.Request) {
 		h.cycleOverviewGrok(w, r)
 	case "kimi":
 		h.cycleOverviewKimi(w, r)
+	case "opencode":
+		h.cycleOverviewOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}
@@ -7451,6 +7685,45 @@ func (h *Handler) cycleOverviewBoth(w http.ResponseWriter, r *http.Request) {
 			"provider":   "openrouter",
 			"quotaNames": []string{"credits"},
 			"cycles":     orCycles,
+		}
+	}
+	
+	if h.config.HasProvider("moonshot") {
+		quotaType := "balance"
+		var msCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveMoonshotCycle(quotaType); err == nil && active != nil {
+			msCycles = append(msCycles, moonshotCycleToMap(active))
+		}
+		if history, err := h.store.QueryMoonshotCycleHistory(quotaType, 50); err == nil {
+			for _, c := range history {
+				msCycles = append(msCycles, moonshotCycleToMap(c))
+			}
+		}
+		response["moonshot"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "moonshot",
+			"quotaNames": []string{"balance"},
+			"cycles":     msCycles,
+		}
+	}
+
+	if h.config.HasProvider("deepseek") {
+		quotaType := "balance"
+		currency := "CNY" // Could be made dynamic
+		var dsCycles []map[string]interface{}
+		if active, err := h.store.QueryActiveDeepSeekCycle(quotaType, currency); err == nil && active != nil {
+			dsCycles = append(dsCycles, deepseekCycleToMap(active))
+		}
+		if history, err := h.store.QueryDeepSeekCycleHistory(quotaType, currency, 50); err == nil {
+			for _, c := range history {
+				dsCycles = append(dsCycles, deepseekCycleToMap(c))
+			}
+		}
+		response["deepseek"] = map[string]interface{}{
+			"groupBy":    quotaType,
+			"provider":   "deepseek",
+			"quotaNames": []string{"balance"},
+			"cycles":     dsCycles,
 		}
 	}
 
@@ -10781,6 +11054,10 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryMiniMax(w, r)
 	case "openrouter":
 		h.loggingHistoryOpenRouter(w, r)
+	case "moonshot":
+		h.loggingHistoryMoonshot(w, r)
+	case "deepseek":
+		h.loggingHistoryDeepSeek(w, r)
 	case "gemini":
 		h.loggingHistoryGemini(w, r)
 	case "cursor":
@@ -10789,6 +11066,8 @@ func (h *Handler) LoggingHistory(w http.ResponseWriter, r *http.Request) {
 		h.loggingHistoryGrok(w, r)
 	case "kimi":
 		h.loggingHistoryKimi(w, r)
+	case "opencode":
+		h.loggingHistoryOpenCode(w, r)
 	default:
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("unknown provider: %s", provider))
 	}

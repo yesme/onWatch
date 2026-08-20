@@ -117,4 +117,7 @@ func TestDefaultProviderTabLabel(t *testing.T) {
 	if defaultProviderTabLabel("api-integrations") != "API Integrations" {
 		t.Fatal(defaultProviderTabLabel("api-integrations"))
 	}
+	if defaultProviderTabLabel("opencode") != "OpenCode" {
+		t.Fatal(defaultProviderTabLabel("opencode"))
+	}
 }

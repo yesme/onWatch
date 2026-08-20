@@ -1413,17 +1413,83 @@ EOF
 }
 
 # ─── launchd (macOS) ─────────────────────────────────────────────────
+# Without a LaunchAgent nothing brings onWatch back after a reboot or logout,
+# so this is offered on every install. The plist itself is written by the
+# binary (`onwatch service install`) to keep one source of truth.
+LAUNCHD_ENABLED=false
+
 setup_launchd() {
     if [[ "$OS" != "darwin" ]]; then return 1; fi
 
+    local plist="$HOME/Library/LaunchAgents/dev.onllm.onwatch.plist"
+
     echo ""
-    ok "macOS detected — onWatch self-daemonizes"
-    printf "  ${DIM}Manage with:${NC}\n"
-    printf "    ${CYAN}onwatch${NC}           # Start (runs in background)\n"
-    printf "    ${CYAN}onwatch stop${NC}      # Stop\n"
-    printf "    ${CYAN}onwatch status${NC}    # Status\n"
-    printf "    ${CYAN}onwatch --debug${NC}   # Run in foreground (logs to stdout)\n"
+    if [[ -f "$plist" ]]; then
+        # stop_existing already stopped the agent, and KeepAlive only covers
+        # crashes - so without reinstalling here an upgrade would leave onWatch
+        # down until the next login. Reinstalling also refreshes the plist to
+        # point at the newly downloaded binary.
+        if "${BIN_DIR}/onwatch" service install; then
+            LAUNCHD_ENABLED=true
+            ok "Auto-start refreshed and onWatch restarted"
+        else
+            warn "Auto-start is enabled but could not be reloaded - run 'onwatch service install'"
+        fi
+        print_macos_hints
+        return 0
+    fi
+
+    local answer=""
+    case "${ONWATCH_AUTOSTART:-}" in
+        y|yes|1|true)  answer="y" ;;
+        n|no|0|false)  answer="n" ;;
+        *)
+            if [[ -r /dev/tty ]]; then
+                printf "  ${BOLD}Start onWatch automatically at login?${NC} ${DIM}(Y/n)${NC}: "
+                if read -r answer < /dev/tty; then
+                    # A bare Enter accepts the (Y/n) default.
+                    answer="${answer:-y}"
+                else
+                    # EOF instead of an answer is not consent.
+                    answer="n"
+                    echo ""
+                    info "No answer - auto-start not enabled"
+                fi
+            else
+                # Piped install with no terminal - never block, never assume.
+                answer="n"
+                info "No terminal for prompts - auto-start not enabled"
+            fi
+            ;;
+    esac
+
+    if [[ "$answer" =~ ^[Yy] ]]; then
+        if "${BIN_DIR}/onwatch" service install; then
+            LAUNCHD_ENABLED=true
+            ok "onWatch will start automatically at login"
+        else
+            warn "Could not enable auto-start - run 'onwatch service install' later"
+        fi
+    else
+        # Record the decline where the CLI looks for it, so `onwatch setup` and
+        # `onwatch update` do not ask again.
+        mkdir -p "${INSTALL_DIR}"
+        printf 'onwatch service install\n' > "${INSTALL_DIR}/.autostart-declined"
+        info "Auto-start skipped - enable later with: onwatch service install"
+    fi
+
+    print_macos_hints
     return 0
+}
+
+print_macos_hints() {
+    printf "  ${DIM}Manage with:${NC}\n"
+    printf "    ${CYAN}onwatch${NC}                    # Start (runs in background)\n"
+    printf "    ${CYAN}onwatch stop${NC}               # Stop\n"
+    printf "    ${CYAN}onwatch status${NC}             # Status\n"
+    printf "    ${CYAN}onwatch service status${NC}     # Auto-start state\n"
+    printf "    ${CYAN}onwatch service uninstall${NC}  # Disable auto-start\n"
+    printf "    ${CYAN}onwatch --debug${NC}            # Run in foreground (logs to stdout)\n"
 }
 
 # ─── PATH Setup ──────────────────────────────────────────────────────
@@ -1483,8 +1549,20 @@ start_service() {
             print_errors "$port"
             return 1
         fi
+    elif [[ "$LAUNCHD_ENABLED" == true ]]; then
+        # ── launchd start (macOS) ──
+        # `onwatch service install` already kickstarted the agent; starting a
+        # second copy here would just make the two fight over the port.
+        sleep 2
+        # `onwatch status` exits 0 either way, so match on its output.
+        if "${BIN_DIR}/onwatch" status 2>/dev/null | grep -q "is running"; then
+            ok "onWatch is running (managed by launchd)"
+        else
+            print_errors "$port"
+            return 1
+        fi
     else
-        # ── Direct start (macOS / Linux without systemd) ──
+        # ── Direct start (macOS without auto-start / Linux without systemd) ──
         cd "$INSTALL_DIR"
         if "${BIN_DIR}/onwatch" 2>&1; then
             sleep 1

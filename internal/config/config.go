@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,9 @@ type Config struct {
 	CodexAutoSource    string // "codex" | "opencode" when auto-detected (display/logging)
 	CodexHasProfiles   bool   // true if saved profiles exist (enables bootstrap without token)
 	OpenCodeEnabled    bool   // OPENCODE_ENABLED=true: track ChatGPT via OpenCode auth.json (feeds Codex)
+	// OpenCode Go provider configuration
+	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
+	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
 	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
@@ -60,6 +64,12 @@ type Config struct {
 
 	// OpenRouter provider configuration
 	OpenRouterAPIKey string // OPENROUTER_API_KEY
+
+	// Moonshot provider configuration
+	MoonshotAPIKey string // MOONSHOT_API_KEY
+	
+	// DeepSeek provider configuration
+	DeepSeekAPIKey string // DEEPSEEK_API_KEY
 
 	// Gemini provider configuration (auto-detected from ~/.gemini/oauth_creds.json or env vars)
 	GeminiEnabled      bool   // true if auto-detected or GEMINI_ENABLED=true
@@ -101,6 +111,9 @@ type Config struct {
 	MetricsToken       string        // ONWATCH_METRICS_TOKEN (bearer token for /metrics endpoint)
 	SessionIdleTimeout time.Duration // ONWATCH_SESSION_IDLE_TIMEOUT (seconds → Duration)
 	BasePath           string        // ONWATCH_BASE_PATH (subdirectory hosting, e.g. "/onwatch")
+	AuthMode           string        // ONWATCH_AUTH_MODE: "local" (default) or "trusted_proxy"
+	TrustedProxyCIDRs  []string      // ONWATCH_TRUSTED_PROXY_CIDRS (comma-separated CIDRs or IPs)
+	TrustedUserHeader  string        // ONWATCH_TRUSTED_USER_HEADER (default: X-Forwarded-User)
 	DebugMode          bool          // --debug flag (foreground mode)
 	DebugStdout        bool          // --debugstdout flag (foreground + all logs to stdout)
 	TestMode           bool          // --test flag (test mode isolation)
@@ -212,10 +225,14 @@ var onwatchEnvKeys = []string{
 	"COPILOT_TOKEN",
 	"CODEX_TOKEN",
 	"OPENCODE_ENABLED",
+	"OPENCODE_GO_WORKSPACE_ID",
+	"OPENCODE_GO_AUTH_COOKIE",
 	"OPENCODE_HOME",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
+	"MOONSHOT_API_KEY",
+	"DEEPSEEK_API_KEY",
 	"CURSOR_TOKEN",
 	"GROK_TOKEN",
 	"GROK_ENABLED",
@@ -321,6 +338,8 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	}
 	// OpenCode feeds the Codex provider using ChatGPT OAuth stored by OpenCode.
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
+	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
+	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
 	// Codex auto quota-starter (Beta): default off; the dashboard toggle in
 	// provider_settings overrides these env-provided defaults at runtime.
 	cfg.CodexAutoStart5h = os.Getenv("CODEX_AUTO_START_5H") == "true"
@@ -358,6 +377,12 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 
 	// OpenRouter provider
 	cfg.OpenRouterAPIKey = strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY"))
+	
+	// Moonshot provider
+	cfg.MoonshotAPIKey = strings.TrimSpace(os.Getenv("MOONSHOT_API_KEY"))
+	
+	// DeepSeek provider
+	cfg.DeepSeekAPIKey = strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 
 	// Gemini provider (auto-detected, env vars, or opt-out via GEMINI_ENABLED=false)
 	cfg.GeminiRefreshToken = strings.TrimSpace(os.Getenv("GEMINI_REFRESH_TOKEN"))
@@ -467,6 +492,17 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	// Base Path (subdirectory hosting, e.g. "/onwatch")
 	cfg.BasePath = strings.TrimSpace(os.Getenv("ONWATCH_BASE_PATH"))
 
+	// Dashboard auth mode (local login vs trusted reverse proxy)
+	cfg.AuthMode = strings.ToLower(strings.TrimSpace(os.Getenv("ONWATCH_AUTH_MODE")))
+	if env := strings.TrimSpace(os.Getenv("ONWATCH_TRUSTED_PROXY_CIDRS")); env != "" {
+		for _, part := range strings.Split(env, ",") {
+			if p := strings.TrimSpace(part); p != "" {
+				cfg.TrustedProxyCIDRs = append(cfg.TrustedProxyCIDRs, p)
+			}
+		}
+	}
+	cfg.TrustedUserHeader = strings.TrimSpace(os.Getenv("ONWATCH_TRUSTED_USER_HEADER"))
+
 	// Session Idle Timeout (seconds)
 	if env := envWithFallback("ONWATCH_SESSION_IDLE_TIMEOUT", "SYNTRACK_SESSION_IDLE_TIMEOUT"); env != "" {
 		if v, err := strconv.Atoi(env); err == nil {
@@ -546,6 +582,12 @@ func (c *Config) applyDefaults() {
 	if c.SessionIdleTimeout == 0 {
 		c.SessionIdleTimeout = 600 * time.Second
 	}
+	if c.AuthMode == "" {
+		c.AuthMode = AuthModeLocal
+	}
+	if c.TrustedUserHeader == "" {
+		c.TrustedUserHeader = "X-Forwarded-User"
+	}
 	if c.APIIntegrationsDir == "" {
 		if c.IsDockerEnvironment() {
 			c.APIIntegrationsDir = "/data/api-integrations"
@@ -558,6 +600,39 @@ func (c *Config) applyDefaults() {
 			}
 		}
 	}
+}
+
+// Dashboard auth modes.
+const (
+	AuthModeLocal        = "local"         // built-in login form + Basic Auth (default)
+	AuthModeTrustedProxy = "trusted_proxy" // trust identity headers from configured reverse proxies
+)
+
+// ParseTrustedProxyCIDRs parses trusted proxy entries into networks.
+// Entries may be CIDRs ("172.30.0.0/16") or bare IPs ("127.0.0.1", "::1"),
+// which are treated as single-host networks.
+func ParseTrustedProxyCIDRs(entries []string) ([]*net.IPNet, error) {
+	nets := make([]*net.IPNet, 0, len(entries))
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if _, ipNet, err := net.ParseCIDR(entry); err == nil {
+			nets = append(nets, ipNet)
+			continue
+		}
+		ip := net.ParseIP(entry)
+		if ip == nil {
+			return nil, fmt.Errorf("invalid trusted proxy CIDR or IP: %q", entry)
+		}
+		bits := 32
+		if ip.To4() == nil {
+			bits = 128
+		}
+		nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+	}
+	return nets, nil
 }
 
 // Validate checks the configuration for errors.
@@ -580,6 +655,20 @@ func (c *Config) Validate() error {
 	// Port range
 	if c.Port < 1024 || c.Port > 65535 {
 		return fmt.Errorf("port must be between 1024 and 65535")
+	}
+
+	// Auth mode: fail closed if trusted_proxy is misconfigured
+	switch c.AuthMode {
+	case AuthModeLocal:
+	case AuthModeTrustedProxy:
+		if len(c.TrustedProxyCIDRs) == 0 {
+			return fmt.Errorf("ONWATCH_AUTH_MODE=trusted_proxy requires ONWATCH_TRUSTED_PROXY_CIDRS")
+		}
+		if _, err := ParseTrustedProxyCIDRs(c.TrustedProxyCIDRs); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("invalid ONWATCH_AUTH_MODE %q (valid: %s, %s)", c.AuthMode, AuthModeLocal, AuthModeTrustedProxy)
 	}
 	if c.APIIntegrationsRetention < 0 {
 		return fmt.Errorf("API integrations retention must be non-negative")
@@ -615,6 +704,12 @@ func (c *Config) AvailableProviders() []string {
 	if c.OpenRouterAPIKey != "" {
 		providers = append(providers, "openrouter")
 	}
+	if c.MoonshotAPIKey != "" {
+		providers = append(providers, "moonshot")
+	}
+	if c.DeepSeekAPIKey != "" {
+		providers = append(providers, "deepseek")
+	}
 	if c.GeminiEnabled {
 		providers = append(providers, "gemini")
 	}
@@ -626,6 +721,9 @@ func (c *Config) AvailableProviders() []string {
 	}
 	if c.KimiToken != "" || c.KimiEnabled {
 		providers = append(providers, "kimi")
+	}
+	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
+		providers = append(providers, "opencode")
 	}
 	return providers
 }
@@ -649,6 +747,10 @@ func (c *Config) HasProvider(name string) bool {
 		return c.MiniMaxAPIKey != ""
 	case "openrouter":
 		return c.OpenRouterAPIKey != ""
+	case "moonshot":
+		return c.MoonshotAPIKey != ""
+	case "deepseek":
+		return c.DeepSeekAPIKey != ""
 	case "gemini":
 		return c.GeminiEnabled
 	case "cursor":
@@ -657,6 +759,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.GrokToken != "" || c.GrokEnabled
 	case "kimi":
 		return c.KimiToken != "" || c.KimiEnabled
+	case "opencode":
+		return c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != ""
 	}
 	return false
 }
@@ -688,6 +792,12 @@ func (c *Config) HasMultipleProviders() bool {
 	if c.OpenRouterAPIKey != "" {
 		count++
 	}
+	if c.MoonshotAPIKey != "" {
+		count++
+	}
+	if c.DeepSeekAPIKey != "" {
+		count++
+	}
 	if c.GeminiEnabled {
 		count++
 	}
@@ -698,6 +808,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.KimiToken != "" || c.KimiEnabled {
+		count++
+	}
+	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
 		count++
 	}
 	return count > 1
@@ -739,6 +852,15 @@ func (c *Config) String() string {
 	// Redact MiniMax token
 	minimaxDisplay := redactAPIKey(c.MiniMaxAPIKey, "")
 	fmt.Fprintf(&sb, "  MiniMaxAPIKey: %s,\n", minimaxDisplay)
+	
+	// Redact Moonshot token
+	moonshotDisplay := redactAPIKey(c.MoonshotAPIKey, "")
+	fmt.Fprintf(&sb, "  MoonshotAPIKey: %s,\n", moonshotDisplay)
+
+	// Redact DeepSeek token
+	deepseekDisplay := redactAPIKey(c.DeepSeekAPIKey, "")
+	fmt.Fprintf(&sb, "  DeepSeekAPIKey: %s,\n", deepseekDisplay)
+	
 	fmt.Fprintf(&sb, "  APIIntegrationsEnabled: %v,\n", c.APIIntegrationsEnabled)
 	fmt.Fprintf(&sb, "  APIIntegrationsDir: %s,\n", c.APIIntegrationsDir)
 	fmt.Fprintf(&sb, "  APIIntegrationsRetention: %v,\n", c.APIIntegrationsRetention)
@@ -763,6 +885,9 @@ func (c *Config) String() string {
 	// Redact Kimi token
 	kimiDisplay := redactAPIKey(c.KimiToken, "")
 	fmt.Fprintf(&sb, "  KimiToken: %s,\n", kimiDisplay)
+	opencodeDisplay := redactAPIKey(c.OpenCodeGoAuthCookie, "")
+	fmt.Fprintf(&sb, "  OpenCodeGoWorkspaceID: %s,\n", c.OpenCodeGoWorkspaceID)
+	fmt.Fprintf(&sb, "  OpenCodeGoAuthCookie: %s,\n", opencodeDisplay)
 	if c.KimiAutoToken {
 		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")
 	}
@@ -775,6 +900,11 @@ func (c *Config) String() string {
 	fmt.Fprintf(&sb, "  Port: %d,\n", c.Port)
 	if c.BasePath != "" {
 		fmt.Fprintf(&sb, "  BasePath: %s,\n", c.BasePath)
+	}
+	if c.AuthMode != "" && c.AuthMode != AuthModeLocal {
+		fmt.Fprintf(&sb, "  AuthMode: %s,\n", c.AuthMode)
+		fmt.Fprintf(&sb, "  TrustedProxyCIDRs: %s,\n", strings.Join(c.TrustedProxyCIDRs, " "))
+		fmt.Fprintf(&sb, "  TrustedUserHeader: %s,\n", c.TrustedUserHeader)
 	}
 	fmt.Fprintf(&sb, "  AdminUser: %s,\n", c.AdminUser)
 	fmt.Fprintf(&sb, "  AdminPass: ****,\n")

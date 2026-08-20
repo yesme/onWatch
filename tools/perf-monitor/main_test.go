@@ -589,3 +589,30 @@ func TestMain_RestartFailureExitsWithError(t *testing.T) {
 		t.Fatalf("expected restart failure message, got %s", string(output))
 	}
 }
+
+// Positional arguments must be counted independently of flags. Indexing on the
+// raw argv position made `--restart 8080 30s` read "8080" as the duration and
+// keep the default port 9211 - so a restart aimed at another port stopped
+// whatever was listening on 9211 instead.
+func TestParseArgs_FlagBeforePositionals(t *testing.T) {
+	cases := []struct {
+		args     []string
+		wantPort int
+		wantDur  time.Duration
+		wantRst  bool
+	}{
+		{[]string{"perf-monitor", "--restart", "8080", "30s"}, 8080, 30 * time.Second, true},
+		{[]string{"perf-monitor", "8080", "30s"}, 8080, 30 * time.Second, false},
+		{[]string{"perf-monitor", "8080", "--restart", "30s"}, 8080, 30 * time.Second, true},
+		{[]string{"perf-monitor"}, 9211, time.Minute, false},
+		{[]string{"perf-monitor", "-r"}, 9211, time.Minute, true},
+	}
+
+	for _, c := range cases {
+		port, duration, restart := parseArgs(c.args[1:])
+		if port != c.wantPort || duration != c.wantDur || restart != c.wantRst {
+			t.Errorf("parseArgs(%v) = (%d, %s, %v), want (%d, %s, %v)",
+				c.args[1:], port, duration, restart, c.wantPort, c.wantDur, c.wantRst)
+		}
+	}
+}

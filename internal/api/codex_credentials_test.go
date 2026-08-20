@@ -18,13 +18,13 @@ func discardLoggerCredentials() *slog.Logger {
 
 // isolateOpenCodeEnv prevents codex-credential detection from reading the real
 // developer/CI OpenCode auth file. DetectCodexCredentials falls back to
-// OPENCODE_HOME, then XDG_DATA_HOME/opencode, then HOME/.local/share/opencode;
-// clearing the first two pins resolution under the (already temp) HOME so tests
-// are hermetic regardless of the host's real ChatGPT/OpenCode login state.
+// OPENCODE_HOME, then XDG_DATA_HOME/opencode, then os.UserHomeDir()/.local/share/opencode.
+// Clearing the first two is NOT enough on macOS: UserHomeDir ignores $HOME and
+// still resolves the host auth.json. Pin both to empty temp dirs instead.
 func isolateOpenCodeEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("OPENCODE_HOME", "")
-	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("OPENCODE_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 }
 
 func TestDetectCodexCredentials_ParsesOAuthTokens(t *testing.T) {

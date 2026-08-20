@@ -230,6 +230,10 @@ func SessionAuthMiddleware(sessions *SessionStore, logger ...*slog.Logger) func(
 }
 
 func sessionAuthMiddlewareWithBasePath(sessions *SessionStore, basePath string, logger ...*slog.Logger) func(http.Handler) http.Handler {
+	return sessionAuthMiddlewareWithTrustedProxy(sessions, basePath, nil, logger...)
+}
+
+func sessionAuthMiddlewareWithTrustedProxy(sessions *SessionStore, basePath string, trustedProxy *TrustedProxyAuth, logger ...*slog.Logger) func(http.Handler) http.Handler {
 	var log *slog.Logger
 	if len(logger) > 0 && logger[0] != nil {
 		log = logger[0]
@@ -252,6 +256,17 @@ func sessionAuthMiddlewareWithBasePath(sessions *SessionStore, basePath string, 
 
 			// Local tray surface is intentionally public for localhost requests.
 			if isLocalMenubarPublicPath(path) && isLoopbackRequest(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Trusted reverse-proxy identity (ONWATCH_AUTH_MODE=trusted_proxy)
+			// bypasses the local login for requests arriving through a
+			// configured proxy with an authenticated-user header.
+			if user, ok := trustedProxy.TrustedUser(r); ok {
+				if log != nil {
+					log.Debug("Trusted proxy auth", "user", user, "path", path)
+				}
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -64,6 +64,8 @@ Counters live outside the per-scrape reset path, so `rate()` / `increase()` quer
 
 - `provider` - `anthropic`, `codex`, `copilot`, `zai`, `minimax`, `antigravity`, `gemini`, `openrouter`, `api_integrations`.
 - `quota_type` - provider-specific quota identifier. For Gemini, Antigravity, and MiniMax this is the model ID (`gemini-2.5-pro`, etc.) so **cardinality grows as new models appear**; configure Prometheus retention accordingly.
+  - MiniMax also emits the weekly window as `weekly_<model>` (for example `weekly_MiniMax-M2`) alongside the rolling five-hour `<model>` series, each with its own reset timestamp. Accounts predating the weekly window emit no weekly series rather than a flat zero. To alert on one window only, match `quota_type=~"weekly_.*"` or exclude it with `quota_type!~"weekly_.*"`.
+  - Z.ai emits `tokens` and `time`. A series is present whenever the plan declares that quota at all, not only once it has been consumed; a plan that reports a percentage while leaving the numeric budget at zero still exports (issue #112). A quota the plan does not have emits no series.
 - `account_id` - numeric account ID for multi-account providers (Codex, MiniMax); `"default"` for single-account providers.
 - `account_name` - human-readable account name from `onwatch_account_info` (join-metric).
 - `unit` - on `onwatch_credits_balance` only: `usd` | `credits` | `prompt_credits`.

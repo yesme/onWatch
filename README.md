@@ -18,7 +18,7 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.12.5-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.12.5)
+[![Version](https://img.shields.io/badge/Version-v2.13.5-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.13.5)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
@@ -31,7 +31,7 @@ It works with any tool that uses Synthetic, Z.ai, Anthropic, Codex, GitHub Copil
 
 **Beta:** onWatch is currently in active development. Features and APIs may change as we refine the product.
 
-[![Star History Chart](https://api.star-history.com/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.com/#onllm-dev/onwatch&Timeline)
+[![Star History Chart](https://star-history.dera.page/svg?repos=onllm-dev/onwatch&type=Timeline)](https://star-history.dera.page/#onllm-dev/onwatch&Timeline)
 
 ![Anthropic Dashboard - Light Mode](./docs/screenshots/anthropic-light.png)
 
@@ -51,7 +51,7 @@ If onWatch helps you track your AI spending, consider giving it a star. It helps
 curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh | bash
 ```
 
-This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or self-daemonizes (macOS), and adds `onwatch` to your PATH.
+This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or a launchd agent (macOS, offered during install), and adds `onwatch` to your PATH.
 
 On macOS, the installer downloads the standard binary with menubar support.
 
@@ -170,6 +170,9 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Cursor** -- Individual, Team, and Enterprise account tracking with auto-detected credentials from Cursor Desktop SQLite or macOS Keychain/Linux keyring, OAuth token auto-refresh, burn rate forecasts, and on-demand spend tracking
 - **Kimi Code** -- Moonshot Kimi Code CLI OAuth quotas via `GET /coding/v1/usages` (auto-detect `~/.kimi-code/credentials`). Weekly + window limits with reset countdown. See [Kimi Setup](docs/KIMI_SETUP.md).
 - **Grok** -- xAI Grok Build / SuperGrok credits tracking via local `~/.grok/auth.json` (or `$GROK_HOME`), optional `grok agent stdio` RPC, and grok.com gRPC-web bearer probe (no browser cookie import). Primary "Credits" utilization against plan limit with reset countdown. Informational local session token stats also captured.
+- **Moonshot** -- Balance-based tracking for the Moonshot (Kimi) open-platform API. Available, Voucher, and Cash balance cards with drop-rate trends. Set `MOONSHOT_API_KEY`. See [Moonshot Setup](docs/MOONSHOT_SETUP.md).
+- **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
+- **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) scraped from the authenticated OpenCode Go dashboard, with cycle history and deep insights. Set `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -337,6 +340,10 @@ Additional environment variables:
 | `KIMI_TOKEN` / `KIMI_CODE_TOKEN` | Optional static Kimi Code access token (prefer local OAuth credentials)|
 | `KIMI_CODE_ENABLED`      | Enable Kimi Code provider (default: auto when credentials present)|
 | `KIMI_CODE_CREDENTIALS`  | Path to kimi-code.json (default ~/.kimi-code/credentials/kimi-code.json)|
+| `MOONSHOT_API_KEY`       | Moonshot (Kimi) open-platform API key (enables balance tracking)|
+| `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
+| `OPENCODE_GO_WORKSPACE_ID` | OpenCode Go workspace ID (`wrk_...`) from the dashboard URL|
+| `OPENCODE_GO_AUTH_COOKIE` | OpenCode Go `auth` cookie value (enables quota tracking)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|
@@ -350,6 +357,9 @@ Additional environment variables:
 | `ONWATCH_ADMIN_PASS`     | Initial dashboard password (default: `changeme`)       |
 | `ONWATCH_LOG_LEVEL`      | Log level: debug, info, warn, error                    |
 | `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`)                      |
+| `ONWATCH_AUTH_MODE`      | `local` (default) or `trusted_proxy` (SSO via reverse proxy, see [docs/TRUSTED_PROXY_AUTH.md](docs/TRUSTED_PROXY_AUTH.md)) |
+| `ONWATCH_TRUSTED_PROXY_CIDRS` | Comma-separated CIDRs/IPs allowed to assert identity headers (required for `trusted_proxy`) |
+| `ONWATCH_TRUSTED_USER_HEADER` | Identity header set by the proxy (default: `X-Forwarded-User`) |
 | `ONWATCH_API_INTEGRATIONS_ENABLED` | Enable or disable API Integrations ingestion (default: `true`) |
 | `ONWATCH_API_INTEGRATIONS_DIR`     | Directory onWatch tails for API Integrations JSONL events |
 | `ONWATCH_API_INTEGRATIONS_RETENTION` | How long API Integrations rows are kept in SQLite (default: `1440h` = 60 days, `0` disables pruning) |
@@ -405,7 +415,11 @@ Or click the update badge in the dashboard footer when a new version is availabl
 
 **Under systemd**, the update is fully automatic - no manual restart needed. onWatch detects its systemd service via `/proc/self/cgroup`, fixes the unit file if needed (`Restart=always`), runs `systemctl daemon-reload`, and triggers `systemctl restart` for a clean lifecycle-managed restart.
 
-**Standalone mode** (macOS, or Linux without systemd) spawns the new binary, which takes over via PID file. If the spawn fails, onWatch automatically falls back to `systemctl restart` as a safety net.
+**Under launchd** (macOS with auto-start enabled), the update restarts the agent with `launchctl kickstart -k`, so launchd keeps owning the process.
+
+**Standalone mode** (macOS without auto-start, or Linux without systemd) spawns the new binary, which takes over via PID file. If the spawn fails, onWatch automatically falls back to `systemctl restart` as a safety net.
+
+`onwatch update` always leaves onWatch running: if the daemon was stopped (after a reboot, say), the update starts it rather than exiting silently.
 
 The binary validates downloaded updates by checking executable magic bytes (ELF, Mach-O, PE) before replacing itself.
 
@@ -415,9 +429,38 @@ The binary validates downloaded updates by checking executable magic bytes (ELF,
 # systemd (Linux)
 sudo systemctl restart onwatch
 
+# launchd (macOS with auto-start enabled)
+launchctl kickstart -k gui/$UID/dev.onllm.onwatch
+
 # Standalone (macOS / Linux without systemd)
 onwatch stop && onwatch
 ```
+
+---
+
+## Auto-Start at Login (macOS)
+
+Without a launchd agent nothing restarts onWatch after a reboot or logout. The
+installer offers to set this up, and `onwatch setup` / `onwatch update` offer it
+once if it is missing. You can also manage it directly:
+
+```bash
+onwatch service install     # Start automatically at login
+onwatch service status      # Show whether the agent is installed and loaded
+onwatch service uninstall   # Remove the agent
+```
+
+The agent is a per-user LaunchAgent at
+`~/Library/LaunchAgents/dev.onllm.onwatch.plist` with `RunAtLoad` and
+`KeepAlive: {SuccessfulExit: false}` - it restarts onWatch after a crash, but a
+deliberate `onwatch stop` stays stopped until the next login. Declining the
+prompt is remembered in `~/.onwatch/.autostart-declined`, so it is only asked
+once.
+
+For unattended installs, set `ONWATCH_AUTOSTART=yes` (or `no`) before running
+`install.sh`.
+
+On Linux, this role is played by the systemd unit that `install.sh` creates.
 
 ---
 
@@ -582,6 +625,20 @@ See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilat
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)
 ```
 
+### Nix
+
+If you have Nix (flakes enabled), you can build, run, and develop without touching `app.sh`:
+
+```bash
+nix build .#onwatch            # Build -> ./result/bin/onwatch (pure-Go, static)
+nix run .#onwatch -- --debug   # Build + run
+nix develop                    # Enter a shell with go, gopls, gotools, gofumpt
+```
+
+With [direnv](https://direnv.net/) installed, run `direnv allow` once and the devShell loads automatically on `cd`.
+
+The flake tracks `nixos-unstable` (pinned via `flake.lock`) because `go.mod` requires Go >= 1.25.7 and the `nixos-25.05` branch only ships Go 1.24. When you change `go.sum`, update the `vendorHash` in `flake.nix` by running `nix build .#onwatch` and pasting the `got: sha256-...` value from the mismatch error.
+
 ---
 
 ## Contributing
@@ -630,6 +687,7 @@ rm -rf ~/.onwatch
 
 **Manual install (macOS):**
 ```bash
+onwatch service uninstall   # Remove the launchd auto-start agent, if enabled
 onwatch stop
 rm -rf ~/.onwatch
 sed -i '' '/# onWatch/d; /\.onwatch/d' ~/.zshrc ~/.bash_profile 2>/dev/null

@@ -34,7 +34,9 @@ type Server struct {
 // passwordHash should be a SHA-256 hex hash of the admin password.
 // basePath is the URL prefix for subdirectory hosting (e.g. "/onwatch"), empty for root.
 // metricsToken is the bearer token for /metrics endpoint (can be empty to disable auth).
-func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwordHash, host, basePath, metricsToken string) *Server {
+// trustedProxy optionally lets authenticated reverse-proxy requests bypass the
+// local login (ONWATCH_AUTH_MODE=trusted_proxy); pass nil for local auth only.
+func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwordHash, host, basePath, metricsToken string, trustedProxy *TrustedProxyAuth) *Server {
 	if port == 0 {
 		port = 9211 // default port
 	}
@@ -155,7 +157,7 @@ func NewServer(port int, handler *Handler, logger *slog.Logger, username, passwo
 	if username != "" && passwordHash != "" {
 		sessions := NewSessionStore(username, passwordHash, handler.store)
 		handler.sessions = sessions
-		finalHandler = sessionAuthMiddlewareWithBasePath(sessions, bp, logger)(mux)
+		finalHandler = sessionAuthMiddlewareWithTrustedProxy(sessions, bp, trustedProxy, logger)(mux)
 	}
 	// Apply security headers and gzip compression (outermost)
 	finalHandler = securityHeadersMiddleware(gzipHandler(finalHandler))

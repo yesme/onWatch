@@ -257,7 +257,7 @@ func (h *Handler) BuildMenubarSnapshot() (*menubar.Snapshot, error) {
 
 func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidden bool) ([]menubar.ProviderCard, time.Time) {
 	normalized := settings.Normalize()
-	// Reuse dashboard tab renames (Settings → Tab order / Tab name) for menubar cards.
+	// Reuse dashboard tab renames (Settings → Tab name) for menubar cards.
 	labels := h.loadDashboardProviderLabels()
 
 	visibility := h.providerVisibilityMap()
@@ -401,7 +401,16 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	}
 	if h.config != nil && h.config.HasProvider("kimi") && h.providerDashboardVisible("kimi", visibility) {
 		payload := h.buildKimiCurrent()
-		if card := normalizeProviderCard("kimi", resolveProviderTabLabel("kimi", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+		if card := normalizeProviderCard("kimi", "Kimi Code", "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
+	if h.config != nil && h.config.HasProvider("opencode") && h.providerDashboardVisible("opencode", visibility) {
+		payload := h.buildOpenCodeCurrent()
+		if card := normalizeProviderCard("opencode", resolveProviderTabLabel("opencode", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured

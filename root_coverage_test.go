@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -728,6 +729,20 @@ func TestDaemonize_SuccessAndLogOpenError(t *testing.T) {
 		if !strings.Contains(out, "Daemon started (PID") {
 			t.Fatalf("unexpected daemonize output: %s", out)
 		}
+
+		// Reap the spawned child. It is confined to scratch state, but without
+		// this it outlives the test run as a stray process.
+		t.Cleanup(func() {
+			data, err := os.ReadFile(pidFile)
+			if err != nil {
+				return
+			}
+			if pid := parsePIDContent(string(data)); pid > 0 && pid != os.Getpid() {
+				if proc, err := os.FindProcess(pid); err == nil {
+					_ = proc.Signal(syscall.SIGTERM)
+				}
+			}
+		})
 
 		if _, err := os.Stat(pidFile); err != nil {
 			t.Fatalf("pid file should exist: %v", err)

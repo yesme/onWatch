@@ -141,12 +141,23 @@ func (a *ZaiAgent) poll(ctx context.Context) {
 		})
 	}
 
-	// Log poll completion
+	// Log poll completion.
+	//
+	// Field names follow what the numbers mean, not what Z.ai calls them: the
+	// API's "usage" is the total budget and its "currentValue" is the amount
+	// actually consumed (see the dashboard mapping in web/handlers.go). Logging
+	// them under the API's own names made the line read as self-contradictory -
+	// a zero "usage" next to a 68% utilization - which is what prompted the
+	// secondary report in issue #112. Unit*Number is the window descriptor
+	// rather than a budget, so it is logged as such.
 	a.logger.Info("Z.ai poll complete",
-		"time_usage", snapshot.TimeUsage,
-		"time_limit", snapshot.TimeLimit,
-		"tokens_usage", snapshot.TokensUsage,
-		"tokens_limit", snapshot.TokensLimit,
+		"time_budget", snapshot.TimeUsage,
+		"time_used", snapshot.TimeCurrentValue,
+		"time_percentage", snapshot.TimePercentage,
+		"time_window", snapshot.TimeLimit,
+		"tokens_budget", snapshot.TokensUsage,
+		"tokens_used", snapshot.TokensCurrentValue,
 		"tokens_percentage", snapshot.TokensPercentage,
+		"tokens_window", snapshot.TokensLimit,
 	)
 }
