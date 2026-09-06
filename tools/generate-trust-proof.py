@@ -19,6 +19,8 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -29,7 +31,12 @@ pycountry = None
 
 DEFAULT_OWNER = "onllm-dev"
 DEFAULT_REPO = "onwatch"
+DEFAULT_PACKAGE = "onwatch"
 DEFAULT_OUTPUT = "landing/trust-proof.json"
+
+GHCR_DOWNLOADS_RE = re.compile(
+    r'Total downloads</span>\s*<h3\s+title="(\d+)">', re.DOTALL
+)
 
 TRUST_ORG_TOTAL_MARKER = "__total_users_with_org_metadata"
 COUNTRY_MAP_MIN_CITY_POP = 5000
@@ -191,6 +198,53 @@ def fetch_stargazers(owner: str, repo: str) -> Tuple[int, List[StargazerProfile]
             break
 
     return stargazer_count, profiles
+
+
+def fetch_container_downloads(owner: str, repo: str, package: str) -> Optional[int]:
+    """Best-effort scrape of the GHCR package page for the total download count.
+
+    Fetched server-side to avoid the browser CORS restrictions that make this
+    unreliable to scrape directly from the landing page's client-side JS.
+    """
+    url = f"https://github.com/{owner}/{repo}/pkgs/container/{package}"
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            html = response.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError):
+        return None
+
+    match = GHCR_DOWNLOADS_RE.search(html)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def fetch_release_downloads(owner: str, repo: str) -> Optional[int]:
+    """Total download count across every asset of every published release.
+
+    Combined with the GHCR container count this is the honest "how many people
+    actually pulled this" figure - neither half tells the story on its own,
+    since Docker users never touch the release assets and vice versa.
+    """
+    cmd = [
+        "api", "--paginate", f"repos/{owner}/{repo}/releases?per_page=100",
+        "--jq", "[.[] | .assets[] | .download_count] | add",
+    ]
+    try:
+        proc = subprocess.run(["gh", *cmd], capture_output=True, text=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+    total = 0
+    seen = False
+    for line in proc.stdout.split():
+        try:
+            total += int(line)
+            seen = True
+        except ValueError:
+            continue
+    return total if seen else None
 
 
 def pretty_country_name(name: str) -> str:
@@ -626,7 +680,13 @@ def select_org_examples(counter: collections.Counter) -> List[dict]:
     return [{"name": name, "count": count} for name, count in selected[:ORG_EXAMPLE_LIMIT]]
 
 
-def make_payload(owner: str, repo: str) -> Tuple[dict, dict]:
+def make_payload(
+    owner: str,
+    repo: str,
+    package: str,
+    container_downloads_fallback: int = 0,
+    binary_downloads_fallback: int = 0,
+) -> Tuple[dict, dict]:
     stargazer_count, profiles = fetch_stargazers(owner, repo)
     if not profiles:
         raise RuntimeError("No stargazer profiles were returned from GitHub.")
@@ -674,12 +734,24 @@ def make_payload(owner: str, repo: str) -> Tuple[dict, dict]:
     org_examples = [{"name": TRUST_ORG_TOTAL_MARKER, "count": users_with_org_metadata}]
     org_examples.extend(select_org_examples(org_counter))
 
+    container_downloads = fetch_container_downloads(owner, repo, package)
+    container_downloads_used_fallback = container_downloads is None
+    if container_downloads is None:
+        container_downloads = container_downloads_fallback
+
+    binary_downloads = fetch_release_downloads(owner, repo)
+    binary_downloads_used_fallback = binary_downloads is None
+    if binary_downloads is None:
+        binary_downloads = binary_downloads_fallback
+
     payload = {
         "as_of": dt.date.today().isoformat(),
         "stars_snapshot": stargazer_count,
         "countries_count": len(country_counter),
         "top_countries": top_countries,
         "org_examples": org_examples,
+        "container_downloads_snapshot": container_downloads,
+        "binary_downloads_snapshot": binary_downloads,
         "methodology": (
             "Aggregated from public GitHub stargazer profile metadata. "
             "Country spread resolves location text to countries; Unknown equals total stars minus known-country matches."
@@ -697,6 +769,10 @@ def make_payload(owner: str, repo: str) -> Tuple[dict, dict]:
         "org_examples_written": len(org_examples) - 1,
         "blank_location_count": blank_location_count,
         "untriangulated_nonblank_count": untriangulated_nonblank_count,
+        "container_downloads_snapshot": container_downloads,
+        "container_downloads_used_fallback": container_downloads_used_fallback,
+        "binary_downloads_snapshot": binary_downloads,
+        "binary_downloads_used_fallback": binary_downloads_used_fallback,
     }
     return payload, stats
 
@@ -705,6 +781,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate landing/trust-proof.json from GitHub stargazer metadata.")
     parser.add_argument("--owner", default=os.environ.get("TRUST_REPO_OWNER", DEFAULT_OWNER))
     parser.add_argument("--repo", default=os.environ.get("TRUST_REPO_NAME", DEFAULT_REPO))
+    parser.add_argument("--package", default=os.environ.get("TRUST_PACKAGE_NAME", DEFAULT_PACKAGE))
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     return parser.parse_args(argv)
 
@@ -714,8 +791,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     ensure_gh_auth()
 
-    payload, stats = make_payload(args.owner, args.repo)
     out_path = Path(args.output)
+    container_downloads_fallback = 0
+    binary_downloads_fallback = 0
+    if out_path.exists():
+        try:
+            previous = json.loads(out_path.read_text(encoding="utf-8"))
+            container_downloads_fallback = int(previous.get("container_downloads_snapshot") or 0)
+            binary_downloads_fallback = int(previous.get("binary_downloads_snapshot") or 0)
+        except (json.JSONDecodeError, ValueError, OSError):
+            pass
+
+    payload, stats = make_payload(
+        args.owner, args.repo, args.package,
+        container_downloads_fallback, binary_downloads_fallback,
+    )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
