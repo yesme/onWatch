@@ -18,7 +18,8 @@ See history, get alerts, and open a local web dashboard before you hit throttlin
 
 **Compatibility & Docs**
 
-[![Version](https://img.shields.io/badge/Version-v2.13.7-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.13.7)
+[![Version](https://img.shields.io/badge/Version-v2.14.1-0EA5E9?style=for-the-badge)](https://github.com/onllm-dev/onwatch/releases/tag/v2.14.1)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/onllm-dev.onwatch?style=for-the-badge&logo=visualstudiocode&logoColor=white&label=VS%20Code)](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
 [![Platform](https://img.shields.io/badge/macOS%20%7C%20Linux%20%7C%20Windows-orange?style=for-the-badge&logo=apple&logoColor=white)](#quick-start)
 [![pkg.go.dev](https://img.shields.io/badge/pkg.go.dev-reference-007D9C?style=for-the-badge&logo=go&logoColor=white)](https://pkg.go.dev/github.com/onllm-dev/onwatch/v2)
@@ -53,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/onllm-dev/onwatch/main/install.sh |
 
 This downloads the binary to `~/.onwatch/`, creates a `.env` config, sets up a systemd service (Linux) or a launchd agent (macOS, offered during install), and adds `onwatch` to your PATH.
 
-On macOS, the installer downloads the standard binary with menubar support.
+The installer downloads the standard binary, which includes the menubar companion on macOS and the system tray on Linux desktops.
 
 ### Homebrew (macOS & Linux)
 
@@ -78,7 +79,7 @@ For manual setup or troubleshooting, see the [Windows Setup Guide](docs/WINDOWS_
 
 ### Manual Installation
 
-**Download binaries** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64).
+**Download binaries** from the [Releases](https://github.com/onllm-dev/onwatch/releases) page. Binaries are available for macOS (ARM64, AMD64), Linux (AMD64, ARM64), and Windows (AMD64, ARM64).
 
 **Or build from source** (requires Go 1.25+):
 
@@ -141,6 +142,18 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 
 ---
 
+### VS Code Extension
+
+Put the same quotas in your editor. The extension is published on the VS Code Marketplace:
+
+**https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch**
+
+```bash
+code --install-extension onllm-dev.onwatch
+```
+
+It is a thin client: it needs the onWatch daemon running (steps above) and finds it automatically. Status bar item, hover tables and an onWatch sidebar with the quick view. Every GitHub release also ships the extension as `onwatch-vscode-<version>.vsix` for editors without Marketplace access. See [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
+
 ## What onWatch Tracks (That Your Provider Doesn't)
 
 ```
@@ -173,6 +186,7 @@ Open **http://localhost:9211** and log in with your `.env` credentials.
 - **Moonshot** -- Balance-based tracking for the Moonshot (Kimi) open-platform API. Available, Voucher, and Cash balance cards with drop-rate trends. Set `MOONSHOT_API_KEY`. See [Moonshot Setup](docs/MOONSHOT_SETUP.md).
 - **DeepSeek** -- Balance-based tracking for the DeepSeek platform API. Total, Granted, and Topped-Up balance cards with drop-rate trends. Set `DEEPSEEK_API_KEY`. See [DeepSeek Setup](docs/DEEPSEEK_SETUP.md).
 - **OpenCode Go** -- Subscription quota cards (5-Hour, Weekly, and Monthly when present) scraped from the authenticated OpenCode Go dashboard, with cycle history and deep insights. Set `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`. Separate from `OPENCODE_ENABLED`, which only feeds ChatGPT credentials into the Codex provider. See [OpenCode Setup](docs/OPENCODE_SETUP.md).
+- **Ollama Cloud** (beta) -- Included monthly usage in USD from the ollama.com API with plan-derived caps, per-model request counts, extra-usage spend, cycle history and insights. Set `OLLAMA_API_KEY`. See [Ollama Setup](docs/OLLAMA_SETUP.md).
 - **API Integrations** -- Local JSONL ingestion for custom API-driven workflows and automations. Track per-integration token volume, request counts, recent activity, costs, trends, and accumulated usage across separate API keys and providers.
 - **All** -- Side-by-side view of all configured providers
 - **Prometheus metrics endpoint (Beta)** -- Exposes `/metrics` for Prometheus/Grafana/Alertmanager integrations, with optional bearer token protection via `ONWATCH_METRICS_TOKEN`
@@ -194,14 +208,16 @@ Each quota card shows: usage vs. limit with progress bar, live countdown to rese
 
 **Custom API Integrations setup** -- Use a small wrapper around your own API calls to append normalised JSONL events into `~/.onwatch/api-integrations/`, then open the API Integrations tab to monitor cumulative and recent usage. Full setup instructions live in [docs/API_INTEGRATIONS_SETUP.md](docs/API_INTEGRATIONS_SETUP.md).
 
-**Menubar (macOS, Beta)** -- The macOS build includes a menubar companion with two preset views:
+**Menubar / system tray (macOS, Linux, Windows - Beta)** -- Every desktop build includes a tray companion. macOS shows the selected quota percentages next to a template icon and opens a native popover. Linux and Windows bake the percentage into a status-colored tray icon and open the same quick view in a frameless window. Two preset views:
 
 - **Standard** -- Provider cards with circular quota meters and reset metadata
 - **Detailed** -- Expanded provider cards with sparkline trends and full quota breakdowns
 
-Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, and drag providers into the order you want.
+Configure it in **Settings > Menubar**. You can enable or disable the companion, pick the default view, change refresh and threshold settings, choose which quotas the icon shows, and drag providers into the order you want. Platform notes for Linux and Windows live in [docs/TRAY_LINUX_WINDOWS.md](docs/TRAY_LINUX_WINDOWS.md); GNOME users can also use the [GNOME Shell extension](docs/GNOME_MENUBAR_EXTENSION.md).
 
-Menubar is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
+The tray is currently in beta. Feedback is highly appreciated at [github.com/onllm-dev/onwatch/issues](https://github.com/onllm-dev/onwatch/issues).
+
+**VS Code extension** -- Shows your tightest quota in the VS Code status bar (`82%`, with time to reset at critical), colored by your theme at warning and critical. Hover for a per-provider breakdown; click to open the quick view or the full dashboard inside VS Code. The extension is a thin client for the daemon and follows the same menubar preferences (provider order, visibility, thresholds), so it stays in sync with the dashboard. Zero telemetry. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=onllm-dev.onwatch) (`code --install-extension onllm-dev.onwatch`), grab the `.vsix` from any release, or build it from [extensions/vscode](extensions/vscode). Full setup, settings and troubleshooting live in [docs/VSCODE_EXTENSION.md](docs/VSCODE_EXTENSION.md).
 
 **Email notifications (Beta)** -- Configure SMTP to receive alerts when quotas cross warning or critical thresholds, or when quotas reset. Per-quota threshold overrides for fine-grained control. SMTP passwords are encrypted at rest with AES-GCM.
 
@@ -344,6 +360,9 @@ Additional environment variables:
 | `DEEPSEEK_API_KEY`       | DeepSeek platform API key (enables balance tracking)   |
 | `OPENCODE_GO_WORKSPACE_ID` | OpenCode Go workspace ID (`wrk_...`) from the dashboard URL|
 | `OPENCODE_GO_AUTH_COOKIE` | OpenCode Go `auth` cookie value (enables quota tracking)|
+| `OLLAMA_API_KEY`         | Ollama Cloud API key from ollama.com/settings/keys (enables usage tracking)|
+| `OLLAMA_MONTHLY_LIMIT`   | Ollama included usage cap in USD (0 = derive from plan)|
+| `OLLAMA_RESET_DAY`       | Ollama reset day of month, 1-31 (0 = learn from the first observed reset, starting from the account anniversary)|
 | `ANTIGRAVITY_ENABLED`    | Enable Antigravity provider (auto-detects local server)|
 | `ANTIGRAVITY_SOURCE`     | Data source: `both` (default), `cli` (agy), or `ide`   |
 | `ANTIGRAVITY_CLI_PATH`   | Override path to the `agy` binary (else PATH/well-known)|
@@ -354,9 +373,9 @@ Additional environment variables:
 | `ZAI_BASE_URL`           | Z.ai base URL (default: `https://api.z.ai/api`)        |
 | `ZAI_REGION`             | Z.ai region: `global` (default) or `cn`                 |
 | `ONWATCH_ADMIN_USER`     | Dashboard username (default: `admin`)                  |
-| `ONWATCH_ADMIN_PASS`     | Initial dashboard password (default: `changeme`)       |
+| `ONWATCH_ADMIN_PASS`     | Dashboard password (default: `changeme`). Applied on first start and whenever the stored password is still the default; a password changed in Settings wins after that |
 | `ONWATCH_LOG_LEVEL`      | Log level: debug, info, warn, error                    |
-| `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`)                      |
+| `ONWATCH_HOST`           | Bind address (default: `0.0.0.0`, reachable from your network). Set `127.0.0.1` to keep the dashboard local |
 | `ONWATCH_AUTH_MODE`      | `local` (default) or `trusted_proxy` (SSO via reverse proxy, see [docs/TRUSTED_PROXY_AUTH.md](docs/TRUSTED_PROXY_AUTH.md)) |
 | `ONWATCH_TRUSTED_PROXY_CIDRS` | Comma-separated CIDRs/IPs allowed to assert identity headers (required for `trusted_proxy`) |
 | `ONWATCH_TRUSTED_USER_HEADER` | Identity header set by the proxy (default: `X-Forwarded-User`) |
@@ -384,7 +403,9 @@ All endpoints require authentication (session cookie or Basic Auth). Append `?pr
 | `/api/cycle-overview`           | GET         | Cross-quota correlation at peak usage          |
 | `/api/summary`                  | GET         | Usage summaries                                |
 | `/api/capabilities`             | GET         | Build/runtime capabilities (platform, menubar) |
-| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload            |
+| `/api/menubar/summary`          | GET         | Normalized menubar snapshot payload (public on loopback, dashboard auth elsewhere) |
+| `/api/menubar/tray-title`       | GET         | Compact tray title and per-provider segments   |
+| `/api/menubar/preferences`      | GET/PUT     | Menubar settings (providers, order, thresholds, tray display) |
 | `/api/menubar/test`             | GET         | Browser-testable menubar page in test mode     |
 | `/api/sessions`                 | GET         | Session history                                |
 | `/api/insights`                 | GET         | Usage insights                                 |
@@ -460,6 +481,10 @@ once.
 For unattended installs, set `ONWATCH_AUTOSTART=yes` (or `no`) before running
 `install.sh`.
 
+If the GitHub CLI is installed and logged in, the installer and `onwatch setup`
+ask once whether to star the repository. Yes is the default, and unattended
+installs with no terminal star as well. Set `ONWATCH_STAR=no` to opt out.
+
 On Linux, this role is played by the systemd unit that `install.sh` creates.
 
 ---
@@ -472,7 +497,7 @@ On Linux, this role is played by the systemd unit that `install.sh` creates.
 └── data/
     ├── onwatch.db       # SQLite database (WAL mode)
     ├── .onwatch.log     # Main daemon log file (background mode)
-    └── menubar.log      # Menubar companion log file (macOS menubar builds)
+    └── menubar.log      # Menubar / tray companion log file (desktop builds)
 ```
 
 Log files are stored next to the database (default `~/.onwatch/data/`).
@@ -619,7 +644,7 @@ The `docker-compose.yml` includes memory limits (64M limit, 32M reservation), lo
 See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for build instructions, cross-compilation, and testing.
 
 ```bash
-./app.sh --build       # Production binary (macOS includes menubar) (or: make build)
+./app.sh --build       # Production binary with menubar/tray companion (or: make build)
 ./app.sh --test        # Tests with race detection (or: make test)
 ./app.sh --build --run # Build + run debug mode    (or: make run)
 ./app.sh --release     # Cross-compile all platforms (or: make release-local)

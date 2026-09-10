@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -39,6 +41,7 @@ type setupConfig struct {
 	antigravitySource  string
 	geminiEnabled      bool
 	grokEnabled        bool
+	ollamaKey          string
 	adminUser          string
 	adminPass          string
 	port               int
@@ -72,12 +75,14 @@ func runSetup() error {
 			fmt.Printf("  %sinfo%s  Existing .env found -- all providers configured\n", colorBlue, colorReset)
 			fmt.Printf("  %sTo reconfigure, delete %s and run setup again.%s\n", colorDim, envFile, colorReset)
 			offerAutostart(reader)
+			offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 			return nil
 		}
 		if anyProviderConfigured(existing) {
 			err := addMissingProviders(reader, envFile, existing)
 			if err == nil {
 				offerAutostart(reader)
+				offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 			}
 			return err
 		}
@@ -98,6 +103,7 @@ func runSetup() error {
 
 	printSummary(cfg)
 	offerAutostart(reader)
+	offerGitHubStar(reader, runGH, starMarkerPath(installDir))
 	printNextSteps()
 
 	return nil
@@ -115,6 +121,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		"Antigravity (Windsurf) only",
 		"Gemini CLI only",
 		"Grok (xAI) only",
+		"Ollama Cloud only",
 		"Multiple (choose one at a time)",
 		"All available",
 	}
@@ -143,9 +150,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
 	case 8: // Grok only
 		cfg.grokEnabled = collectGrok(reader, logger)
-	case 9: // Multiple
-		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled = collectMultipleProviders(reader, logger)
-	case 10: // All
+	case 9: // Ollama Cloud only
+		cfg.ollamaKey = collectOllamaKey(reader)
+	case 10: // Multiple
+		cfg.syntheticKey, cfg.zaiKey, cfg.zaiBaseURL, cfg.anthropicToken, cfg.codexToken, cfg.openCodeEnabled, cfg.antigravityEnabled, cfg.geminiEnabled, cfg.grokEnabled, cfg.ollamaKey = collectMultipleProviders(reader, logger)
+	case 11: // All
 		cfg.syntheticKey = collectSyntheticKey(reader)
 		cfg.zaiKey, cfg.zaiBaseURL = collectZaiConfig(reader)
 		cfg.anthropicToken = collectAnthropicToken(reader, logger)
@@ -156,10 +165,11 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 		cfg.geminiEnabled = true
 		fmt.Printf("  %s ok %s  Gemini enabled (auto-detects from ~/.gemini/oauth_creds.json)\n", colorGreen, colorReset)
 		cfg.grokEnabled = collectGrok(reader, logger)
+		cfg.ollamaKey = collectOllamaKey(reader)
 	}
 
 	// Validate at least one provider
-	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled {
+	if cfg.syntheticKey == "" && cfg.zaiKey == "" && cfg.anthropicToken == "" && cfg.codexToken == "" && !cfg.openCodeEnabled && !cfg.antigravityEnabled && !cfg.geminiEnabled && !cfg.grokEnabled && cfg.ollamaKey == "" {
 		return nil, fmt.Errorf("at least one provider is required")
 	}
 
@@ -210,7 +220,7 @@ func freshSetup(reader *bufio.Reader) (*setupConfig, error) {
 	return cfg, nil
 }
 
-func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool) {
+func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey, zaiKey, zaiURL, anthToken, codexToken string, openCodeEnabled, antiEnabled, geminiEnabled, grokEnabled bool, ollamaKey string) {
 	if promptYesNo(reader, "Add Synthetic provider?", false) {
 		synKey = collectSyntheticKey(reader)
 	}
@@ -236,6 +246,9 @@ func collectMultipleProviders(reader *bufio.Reader, logger *slog.Logger) (synKey
 	}
 	if promptYesNo(reader, "Add Grok (xAI) provider?", false) {
 		grokEnabled = collectGrok(reader, logger)
+	}
+	if promptYesNo(reader, "Add Ollama Cloud provider?", false) {
+		ollamaKey = collectOllamaKey(reader)
 	}
 	return
 }
@@ -309,6 +322,50 @@ func collectSyntheticKey(reader *bufio.Reader) string {
 			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
 		} else {
 			fmt.Printf("  %sKey must start with 'syn_'%s\n", colorRed, colorReset)
+		}
+	}
+}
+
+// collectOllamaKey prompts for an Ollama Cloud API key. The key comes from
+// ollama.com/settings/keys and is stored as OLLAMA_API_KEY in .env. onWatch uses
+// it to read included monthly usage and plan details from the ollama.com API.
+// verifyOllamaKey checks a key against ollama.com and returns the plan tier.
+// A package variable so tests can stub it and never touch the network.
+var verifyOllamaKey = func(key string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	snap, err := api.NewOllamaClient(key, slog.New(slog.NewTextHandler(io.Discard, nil)), api.WithOllamaTimeout(10*time.Second)).FetchSnapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	return snap.Plan, nil
+}
+
+func collectOllamaKey(reader *bufio.Reader) string {
+	fmt.Printf("\n  %sOllama Cloud Setup%s\n", colorBold, colorReset)
+	fmt.Printf("  %sCreate an API key at https://ollama.com/settings/keys%s\n", colorDim, colorReset)
+	for {
+		fmt.Print("  Ollama Cloud API key: ")
+		key := readLine(reader)
+		if key == "" {
+			fmt.Printf("  %sCannot be empty%s\n", colorRed, colorReset)
+			continue
+		}
+		plan, err := verifyOllamaKey(key)
+		switch {
+		case err == nil:
+			if plan == "" {
+				plan = "unknown"
+			}
+			fmt.Printf("  %s ok %s  Key verified with ollama.com (plan: %s)  %s%s%s\n", colorGreen, colorReset, plan, colorDim, maskValue(key), colorReset)
+			return key
+		case api.IsOllamaAuthError(err):
+			fmt.Printf("  %sollama.com rejected this key (401). Check it at https://ollama.com/settings/keys and try again.%s\n", colorRed, colorReset)
+			continue
+		default:
+			fmt.Printf("  %s!%s Could not reach ollama.com to verify the key (%v) - saving it anyway\n", colorYellow, colorReset, err)
+			fmt.Printf("  %s ok %s  %s%s%s\n", colorGreen, colorReset, colorDim, maskValue(key), colorReset)
+			return key
 		}
 	}
 }
@@ -437,6 +494,15 @@ func writeEnvFile(path string, cfg *setupConfig) error {
 		b.WriteString("GROK_ENABLED=true\n\n")
 	}
 
+	if cfg.ollamaKey != "" {
+		b.WriteString("# Ollama Cloud API key (https://ollama.com/settings/keys)\n")
+		b.WriteString(fmt.Sprintf("OLLAMA_API_KEY=%s\n", cfg.ollamaKey))
+		b.WriteString("# Optional: included usage cap in USD (0 = derive from plan)\n")
+		b.WriteString("# OLLAMA_MONTHLY_LIMIT=\n")
+		b.WriteString("# Optional: reset day of month 1-31 (0 = account anniversary)\n")
+		b.WriteString("# OLLAMA_RESET_DAY=\n\n")
+	}
+
 	b.WriteString("# Dashboard credentials\n")
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_USER=%s\n", cfg.adminUser))
 	b.WriteString(fmt.Sprintf("ONWATCH_ADMIN_PASS=%s\n\n", cfg.adminPass))
@@ -481,6 +547,9 @@ func printSummary(cfg *setupConfig) {
 	if cfg.grokEnabled {
 		providers = append(providers, "Grok")
 	}
+	if cfg.ollamaKey != "" {
+		providers = append(providers, "Ollama Cloud")
+	}
 	providerLabel := strings.Join(providers, ", ")
 
 	maskedPass := strings.Repeat("*", len(cfg.adminPass))
@@ -519,6 +588,7 @@ type existingEnv struct {
 	antigravityEnabled bool
 	geminiEnabled      bool
 	grokEnabled        bool
+	ollamaKey          string
 }
 
 func loadExistingEnv(path string) *existingEnv {
@@ -558,6 +628,8 @@ func loadExistingEnv(path string) *existingEnv {
 			if val != "" {
 				env.grokEnabled = true
 			}
+		case "OLLAMA_API_KEY":
+			env.ollamaKey = val
 		}
 	}
 	if !env.geminiEnabled {
@@ -576,11 +648,11 @@ func loadExistingEnv(path string) *existingEnv {
 }
 
 func allProvidersConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.openCodeEnabled && env.antigravityEnabled && env.geminiEnabled && env.grokEnabled
+	return env.syntheticKey != "" && env.zaiKey != "" && env.anthropicToken != "" && env.codexToken != "" && env.openCodeEnabled && env.antigravityEnabled && env.geminiEnabled && env.grokEnabled && env.ollamaKey != ""
 }
 
 func anyProviderConfigured(env *existingEnv) bool {
-	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled
+	return env.syntheticKey != "" || env.zaiKey != "" || env.anthropicToken != "" || env.codexToken != "" || env.openCodeEnabled || env.antigravityEnabled || env.geminiEnabled || env.grokEnabled || env.ollamaKey != ""
 }
 
 func addMissingProviders(reader *bufio.Reader, envFile string, existing *existingEnv) error {
@@ -610,6 +682,9 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 	}
 	if existing.grokEnabled {
 		configured = append(configured, "Grok")
+	}
+	if existing.ollamaKey != "" {
+		configured = append(configured, "Ollama Cloud")
 	}
 	fmt.Printf("  %sinfo%s  Existing .env found -- configured: %s\n\n", colorBlue, colorReset, strings.Join(configured, ", "))
 
@@ -719,6 +794,14 @@ func addMissingProviders(reader *bufio.Reader, envFile string, existing *existin
 			fmt.Fprintf(f, "\n# Grok (xAI) - auto-detected from ~/.grok/auth.json (or $GROK_HOME)\nGROK_ENABLED=true\n")
 			fmt.Printf("  %s ok %s  Added Grok provider to .env\n", colorGreen, colorReset)
 			fmt.Printf("  %sNote: run 'grok login' to authenticate (or set GROK_TOKEN)%s\n", colorDim, colorReset)
+		}
+	}
+
+	if existing.ollamaKey == "" {
+		if promptYesNo(reader, "Add Ollama Cloud provider?", false) {
+			key := collectOllamaKey(reader)
+			fmt.Fprintf(f, "\n# Ollama Cloud API key (https://ollama.com/settings/keys)\nOLLAMA_API_KEY=%s\n", key)
+			fmt.Printf("  %s ok %s  Added Ollama Cloud provider to .env\n", colorGreen, colorReset)
 		}
 	}
 

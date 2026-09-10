@@ -47,6 +47,10 @@ type Config struct {
 	// OpenCode Go provider configuration
 	OpenCodeGoWorkspaceID string // OPENCODE_GO_WORKSPACE_ID
 	OpenCodeGoAuthCookie  string // OPENCODE_GO_AUTH_COOKIE
+	// Ollama Cloud provider configuration
+	OllamaAPIKey       string  // OLLAMA_API_KEY from ollama.com/settings/keys
+	OllamaMonthlyLimit float64 // OLLAMA_MONTHLY_LIMIT: included usage cap in USD (overrides the plan default; 0 = derive from plan)
+	OllamaResetDay     int     // OLLAMA_RESET_DAY: day of month the included usage resets (1-31; 0 = account anniversary)
 	CodexShowAvailable string // CODEX_SHOW_AVAILABLE: "usage" | "available", default "usage" (Codex-specific override)
 	CodexAutoStart5h   bool   // CODEX_AUTO_START_5H: auto-send a starter ping when the 5h window resets (Beta, default off)
 	CodexAutoStart7d   bool   // CODEX_AUTO_START_7D: auto-send a starter ping when the weekly window resets (Beta, default off)
@@ -228,6 +232,9 @@ var onwatchEnvKeys = []string{
 	"OPENCODE_GO_WORKSPACE_ID",
 	"OPENCODE_GO_AUTH_COOKIE",
 	"OPENCODE_HOME",
+	"OLLAMA_API_KEY",
+	"OLLAMA_MONTHLY_LIMIT",
+	"OLLAMA_RESET_DAY",
 	"ANTIGRAVITY_ENABLED",
 	"MINIMAX_API_KEY",
 	"OPENROUTER_API_KEY",
@@ -340,6 +347,17 @@ func loadFromEnvAndFlags(flags *flagValues) (*Config, error) {
 	cfg.OpenCodeEnabled = os.Getenv("OPENCODE_ENABLED") == "true"
 	cfg.OpenCodeGoWorkspaceID = strings.TrimSpace(os.Getenv("OPENCODE_GO_WORKSPACE_ID"))
 	cfg.OpenCodeGoAuthCookie = strings.TrimSpace(os.Getenv("OPENCODE_GO_AUTH_COOKIE"))
+	cfg.OllamaAPIKey = strings.TrimSpace(os.Getenv("OLLAMA_API_KEY"))
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_MONTHLY_LIMIT")); v != "" {
+		if f, err := strconv.ParseFloat(strings.TrimPrefix(v, "$"), 64); err == nil && f > 0 {
+			cfg.OllamaMonthlyLimit = f
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("OLLAMA_RESET_DAY")); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d >= 1 && d <= 31 {
+			cfg.OllamaResetDay = d
+		}
+	}
 	// Codex auto quota-starter (Beta): default off; the dashboard toggle in
 	// provider_settings overrides these env-provided defaults at runtime.
 	cfg.CodexAutoStart5h = os.Getenv("CODEX_AUTO_START_5H") == "true"
@@ -540,7 +558,7 @@ func (c *Config) applyDefaults() {
 		c.AdminUser = "admin"
 	}
 	if c.AdminPass == "" {
-		c.AdminPass = "changeme"
+		c.AdminPass = DefaultAdminPass
 	}
 	if c.DBPath == "" {
 		// Check if running in Docker and use /data/onwatch.db as default
@@ -725,6 +743,9 @@ func (c *Config) AvailableProviders() []string {
 	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
 		providers = append(providers, "opencode")
 	}
+	if c.OllamaAPIKey != "" {
+		providers = append(providers, "ollama")
+	}
 	return providers
 }
 
@@ -761,6 +782,8 @@ func (c *Config) HasProvider(name string) bool {
 		return c.KimiToken != "" || c.KimiEnabled
 	case "opencode":
 		return c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != ""
+	case "ollama":
+		return c.OllamaAPIKey != ""
 	}
 	return false
 }
@@ -811,6 +834,9 @@ func (c *Config) HasMultipleProviders() bool {
 		count++
 	}
 	if c.OpenCodeGoWorkspaceID != "" && c.OpenCodeGoAuthCookie != "" {
+		count++
+	}
+	if c.OllamaAPIKey != "" {
 		count++
 	}
 	return count > 1
@@ -888,6 +914,13 @@ func (c *Config) String() string {
 	opencodeDisplay := redactAPIKey(c.OpenCodeGoAuthCookie, "")
 	fmt.Fprintf(&sb, "  OpenCodeGoWorkspaceID: %s,\n", c.OpenCodeGoWorkspaceID)
 	fmt.Fprintf(&sb, "  OpenCodeGoAuthCookie: %s,\n", opencodeDisplay)
+	fmt.Fprintf(&sb, "  OllamaAPIKey: %s,\n", redactAPIKey(c.OllamaAPIKey, ""))
+	if c.OllamaMonthlyLimit > 0 {
+		fmt.Fprintf(&sb, "  OllamaMonthlyLimit: %.2f,\n", c.OllamaMonthlyLimit)
+	}
+	if c.OllamaResetDay > 0 {
+		fmt.Fprintf(&sb, "  OllamaResetDay: %d,\n", c.OllamaResetDay)
+	}
 	if c.KimiAutoToken {
 		fmt.Fprintf(&sb, "  KimiAutoToken: true,\n")
 	}
@@ -941,6 +974,12 @@ func redactAPIKey(key string, expectedPrefix string) string {
 // If the active file reaches 50MB, the chain is rotated before opening:
 // path.2 -> path.3, path.1 -> path.2, path -> path.1.
 func OpenRotatingLogFile(path string) (*os.File, error) {
+	// A fresh install has no data directory yet; the daemon only creates it
+	// later, after logging is up. Create it here so first start never fails
+	// with "path not found" (seen on Windows in issue #117).
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, fmt.Errorf("failed to create log directory %s: %w", filepath.Dir(path), err)
+	}
 	if info, err := os.Stat(path); err == nil {
 		if info.Size() >= maxLogFileBytes {
 			oldest := fmt.Sprintf("%s.%d", path, maxLogBackups)
@@ -1029,7 +1068,14 @@ func (c *Config) IsDockerEnvironment() bool {
 	return false
 }
 
-// IsDefaultPassword returns true if the default password "changeme" is being used.
+// DefaultAdminPass is the dashboard password used when ONWATCH_ADMIN_PASS is
+// not set. It is printed on first start so nobody is locked out of a fresh
+// install.
+const DefaultAdminPass = "changeme"
+
+// IsDefaultPassword returns true if ONWATCH_ADMIN_PASS is unset or still the
+// default. It says nothing about the password stored in the database, which
+// a user may have changed from the dashboard.
 func (c *Config) IsDefaultPassword() bool {
-	return c.AdminPass == "changeme"
+	return c.AdminPass == DefaultAdminPass
 }

@@ -1,0 +1,64 @@
+name: VS Code Extension
+
+# CI for extensions/vscode: lint, typecheck, test, build and package on every
+# change. The .vsix ships as a download on each onWatch release (release.yml
+# and preview.yml build it at the daemon's version). Marketplace publishing is
+# a manual upload for now, by design.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  pull_request:
+    paths:
+      - "extensions/vscode/**"
+      - ".github/workflows/vscode-extension.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: extensions/vscode
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint, test, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: extensions/vscode/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        run: npx vsce package --no-dependencies
+
+      - name: Upload .vsix
+        uses: actions/upload-artifact@v4
+        with:
+          name: onwatch-vsix
+          path: extensions/vscode/*.vsix
+          if-no-files-found: error

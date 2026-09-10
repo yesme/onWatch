@@ -40,7 +40,7 @@ If you prefer full control or the installer doesn't work for your environment, f
 ### Step 1: Download the Binary
 
 1. Go to the [Releases](https://github.com/onllm-dev/onwatch/releases) page
-2. Download `onwatch-windows-amd64.exe`
+2. Download `onwatch-windows-amd64.exe` (or `onwatch-windows-arm64.exe` on a Windows on ARM device such as a Snapdragon laptop or Surface Pro X)
 3. Create the installation directory:
 
 ```powershell
@@ -179,6 +179,15 @@ onwatch
 
 Open your browser to **http://localhost:9211** and log in with your configured credentials.
 
+On the very first start the command prints the dashboard URL and, when no
+password is configured, the default login (`admin` / `changeme`). Change it in
+**Settings -> Security** or set `ONWATCH_ADMIN_PASS` in `.env`. The `.env`
+value is applied as long as the stored password is still the default; once you
+change the password in the dashboard, the dashboard one wins.
+
+The dashboard listens on all interfaces by default so it can be reached from
+other machines. Add `ONWATCH_HOST=127.0.0.1` to `.env` to keep it local.
+
 ---
 
 ## Retrieving Tokens
@@ -297,6 +306,28 @@ nssm remove onwatch confirm
 
 ---
 
+## System Tray
+
+The Windows binary includes the onWatch tray companion. When you start
+`onwatch.exe` from your own session (the installer does this), a small icon
+appears in the notification area:
+
+- The icon shows the selected quota percentage on a colored disc: slate when
+  healthy, amber at the warning threshold, red at critical, gray with a dash
+  when the daemon is unreachable.
+- Hover for a per-provider summary.
+- Left-click opens the quick view in a frameless Microsoft Edge window
+  anchored above the taskbar. Click again to close it.
+- Right-click for the menu: one row per provider, Open Quick View, Open
+  Dashboard, Refresh Now, Quit.
+
+Choose which quota the icon shows under **Settings > Menubar** in the
+dashboard. Set `ONWATCH_DISABLE_TRAY=1` in `.env` to run without the icon.
+The tray does not appear when onWatch runs as a Windows service, because
+services have no desktop session; start `onwatch.exe menubar` at logon
+instead (a shortcut in `shell:startup` works). Details in
+[TRAY_LINUX_WINDOWS.md](TRAY_LINUX_WINDOWS.md).
+
 ## Troubleshooting
 
 ### Windows Defender False Positive
@@ -324,6 +355,15 @@ If the app starts but no quota cards update:
 2. Configure a provider key (or use auto-detect providers)
 3. Open **Settings -> Providers** and enable telemetry for that provider
 4. Restart or click provider reload in Settings
+
+### Cannot Log In to the Dashboard
+
+If you never set `ONWATCH_ADMIN_PASS`, the login is `admin` / `changeme`. If
+you set it in `.env` after the first start and the stored password was still
+the default, the new value is picked up on the next start. If you changed the
+password in **Settings -> Security** and forgot it, stop onWatch, delete
+`%USERPROFILE%\.onwatch\data\onwatch.db` (this also deletes usage history)
+and start again.
 
 ### Binary Flashes and Closes Immediately
 

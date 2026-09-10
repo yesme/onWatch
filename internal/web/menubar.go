@@ -36,17 +36,17 @@ func (h *Handler) Capabilities(w http.ResponseWriter, r *http.Request) {
 		"platform":          runtime.GOOS,
 		"menubar_supported": menubar.IsSupported(),
 		"menubar_running":   menubar.IsRunning(),
+		"menubar_session":   menubar.SessionAvailable(),
 	})
 }
 
 // MenubarSummary returns the normalized data contract used by the menubar UI.
-// Served to any local consumer (macOS companion, GNOME extension, browser).
+// Served to any consumer (native companions, GNOME extension, VS Code
+// extension, browser). Loopback callers skip authentication in the middleware;
+// remote callers go through the regular dashboard auth, so the handler itself
+// no longer gates on the remote address.
 // Does not require a native companion build (menubar.IsSupported).
 func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 	snapshot, err := h.BuildMenubarSnapshot()
 	if err != nil {
 		h.logger.Error("failed to build menubar snapshot", "error", err)
@@ -60,10 +60,6 @@ func (h *Handler) MenubarSummary(w http.ResponseWriter, r *http.Request) {
 // same rules as the macOS menubar companion, so GNOME can stay in sync without
 // reimplementing formatting.
 func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 	snapshot, err := h.BuildMenubarSnapshot()
 	if err != nil {
 		h.logger.Error("failed to build menubar snapshot for tray title", "error", err)
@@ -105,12 +101,9 @@ func (h *Handler) MenubarTrayTitle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MenubarPage renders the localhost-only browser UI used by the tray companion.
+// MenubarPage renders the compact browser UI used by the tray companions and
+// the VS Code quick view. Public on loopback, behind dashboard auth elsewhere.
 func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
-		return
-	}
 
 	settings, _ := h.menubarSettings()
 	view := normalizeMenubarView(r.URL.Query().Get("view"), settings.DefaultView)
@@ -120,15 +113,23 @@ func (h *Handler) MenubarPage(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to render menubar page")
 		return
 	}
-	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; "+
-			"script-src 'self' 'unsafe-inline'; "+
-			"style-src 'self' 'unsafe-inline'; "+
-			"img-src 'self' data:; "+
-			"connect-src 'self'")
+	w.Header().Set("Content-Security-Policy", menubarPageCSP)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
 }
+
+// menubarPageCSP lets the quick view be framed by the onWatch VS Code
+// extension (sidebar webview and Simple Browser run inside vscode-webview://
+// on desktop, vscode-cdn.net in the browser-based editors, under a
+// vscode-file:// workbench) and by the dashboard origin itself, and by nobody
+// else. The middleware skips X-Frame-Options for this page so this list is
+// the whole policy.
+const menubarPageCSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'self' vscode-webview: vscode-file: https://*.vscode-cdn.net"
 
 // MenubarTest renders the same menubar UI in a browser page for automated testing.
 func (h *Handler) MenubarTest(w http.ResponseWriter, r *http.Request) {
@@ -209,10 +210,6 @@ func (h *Handler) MenubarPreferences(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) MenubarRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	if !isLoopbackRequest(r) {
-		http.NotFound(w, r)
 		return
 	}
 	if _, err := h.BuildMenubarSnapshot(); err != nil {
@@ -411,6 +408,15 @@ func (h *Handler) buildMenubarProviders(settings *menubar.Settings, includeHidde
 	if h.config != nil && h.config.HasProvider("opencode") && h.providerDashboardVisible("opencode", visibility) {
 		payload := h.buildOpenCodeCurrent()
 		if card := normalizeProviderCard("opencode", resolveProviderTabLabel("opencode", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
+			providers = append(providers, *card)
+			if captured := parseCapturedAt(payload); captured.After(latest) {
+				latest = captured
+			}
+		}
+	}
+	if h.config != nil && h.config.HasProvider("ollama") && h.providerDashboardVisible("ollama", visibility) {
+		payload := h.buildOllamaCurrent()
+		if card := normalizeProviderCard("ollama", resolveProviderTabLabel("ollama", labels), "", payload, normalized.WarningPercent, normalized.CriticalPercent); card != nil {
 			providers = append(providers, *card)
 			if captured := parseCapturedAt(payload); captured.After(latest) {
 				latest = captured
@@ -725,6 +731,7 @@ func normalizeQuotas(payload map[string]interface{}, warningPercent, criticalPer
 			Status:         quotaStatus(item, percent, warningPercent, criticalPercent),
 			Used:           firstFloat(item, "usage", "used", "currentUsage", "currentUsed"),
 			Limit:          firstFloat(item, "limit", "total", "currentLimit", "entitlement"),
+			Format:         stringValue(item, "format"),
 			ResetAt:        firstString(item, "renewsAt", "resetsAt", "resetDate", "resetTime", "resetAt"),
 			TimeUntilReset: stringValue(item, "timeUntilReset"),
 			ProjectedValue: firstFloat(item, "projectedUsage", "projectedUtil", "projectedValue"),
@@ -982,10 +989,24 @@ func timeAgo(at time.Time) string {
 }
 
 func displayValue(item map[string]interface{}, percent float64) string {
+	// Currency quotas with an unknown cap (Ollama Free plan) have no
+	// meaningful percent; show the dollars used instead of a misleading 0%.
+	if unknown, ok := item["limitUnknown"].(bool); ok && unknown && stringValue(item, "format") == "currency" {
+		return formatUsdShort(firstFloat(item, "used", "usage")) + " used"
+	}
 	if v := stringValue(item, "cardLabel"); v == "Remaining" {
 		return fmt.Sprintf("%.0f%%", percent)
 	}
 	return fmt.Sprintf("%.0f%%", percent)
+}
+
+// formatUsdShort keeps sub-cent amounts visible ($0.001) and rounds the rest
+// to cents.
+func formatUsdShort(v float64) string {
+	if v > 0 && v < 0.01 {
+		return fmt.Sprintf("$%.3f", v)
+	}
+	return fmt.Sprintf("$%.2f", v)
 }
 
 func firstString(item map[string]interface{}, keys ...string) string {

@@ -115,6 +115,7 @@ This produces binaries in `dist/`:
 | Linux AMD64 | `onwatch-linux-amd64` |
 | Linux ARM64 | `onwatch-linux-arm64` |
 | Windows AMD64 | `onwatch-windows-amd64.exe` |
+| Windows ARM64 | `onwatch-windows-arm64.exe` |
 
 Manual cross-compilation:
 
@@ -144,6 +145,7 @@ ZAI_API_KEY=your_zai_key
 ANTHROPIC_TOKEN=your_anthropic_token      # Auto-detected from Claude Code if not set
 CODEX_TOKEN=your_codex_token              # Recommended for Codex-only setups
 COPILOT_TOKEN=ghp_your_github_token       # GitHub PAT with 'copilot' scope (Beta)
+OLLAMA_API_KEY=your_ollama_cloud_key      # Ollama Cloud usage from ollama.com/settings/keys
 ```
 
 All configured providers run simultaneously. Configure any combination.
@@ -477,6 +479,8 @@ macOS has no systemd equivalent, so onWatch manages a per-user LaunchAgent at `~
 `_ONWATCH_LAUNCHD=1` changes two things in `run()`: the process stays in the foreground (forking would make launchd think the job died and relaunch it in a loop), and it writes its own PID file, since there is no daemonize parent to write one.
 
 Auto-start is opt-in. `install.sh`, `onwatch setup`, and `onwatch update` each offer it once when the agent is missing; declining writes `~/.onwatch/.autostart-declined` so the offer is not repeated. `ONWATCH_AUTOSTART=yes|no` answers the installer prompt non-interactively.
+
+The GitHub star prompt follows the same pattern: `install.sh`, `install.ps1` and `onwatch setup` offer it once when `gh auth status` succeeds and `gh api user/starred/onllm-dev/onwatch` says the repo is not starred yet; the outcome is remembered in `~/.onwatch/.star-prompted` so it never runs twice. Yes is the default: Enter, EOF and a missing terminal all star, so unattended installs star too. `ONWATCH_STAR=no` is the opt-out.
 
 ### Key Source Files
 

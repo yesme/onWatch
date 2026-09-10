@@ -1,0 +1,396 @@
+{
+  "name": "onwatch",
+  "displayName": "onWatch",
+  "description": "AI quota tracking in your status bar - Anthropic, Codex, Copilot, Gemini and more, powered by the onWatch daemon",
+  "version": "2.14.1",
+  "publisher": "onllm-dev",
+  "license": "GPL-3.0-only",
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/onllm-dev/onWatch/blob/main/docs/VSCODE_EXTENSION.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onllm-dev/onWatch.git",
+    "directory": "extensions/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/onllm-dev/onWatch/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0",
+    "node": ">=20"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "anthropic",
+    "claude",
+    "codex",
+    "copilot",
+    "quota",
+    "rate limit",
+    "usage",
+    "onwatch"
+  ],
+  "galleryBanner": {
+    "color": "#0D9488",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "onwatch.openDashboard",
+        "title": "Open Dashboard",
+        "category": "onWatch",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "onwatch.openQuickView",
+        "title": "Open Quick View",
+        "category": "onWatch"
+      },
+      {
+        "command": "onwatch.openDashboardExternal",
+        "title": "Open Dashboard in External Browser",
+        "category": "onWatch"
+      },
+      {
+        "command": "onwatch.refresh",
+        "title": "Refresh",
+        "category": "onWatch",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "onwatch.setCredentials",
+        "title": "Set Daemon Credentials",
+        "category": "onWatch"
+      },
+      {
+        "command": "onwatch.clearCredentials",
+        "title": "Clear Daemon Credentials",
+        "category": "onWatch"
+      },
+      {
+        "command": "onwatch.showLogs",
+        "title": "Show Logs",
+        "category": "onWatch"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "onwatch",
+          "title": "onWatch",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "onwatch": [
+        {
+          "id": "onwatch.quickView",
+          "name": "Quick View",
+          "type": "webview",
+          "icon": "media/activity.svg",
+          "contextualTitle": "onWatch"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "onwatch.refresh",
+          "when": "view == onwatch.quickView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "onwatch.openDashboard",
+          "when": "view == onwatch.quickView",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "onWatch",
+      "properties": {
+        "onwatch.daemonUrl": {
+          "type": "string",
+          "default": "",
+          "order": 1,
+          "markdownDescription": "Full base URL of the onWatch daemon, for example `http://127.0.0.1:9211` or `http://host:9211/onwatch` when the daemon runs behind a base path. Leave empty to auto-discover: `~/.onwatch/port`, then the `ONWATCH_PORT` environment variable, then port `9211` on `127.0.0.1`."
+        },
+        "onwatch.statusBar.mode": {
+          "type": "string",
+          "enum": [
+            "combined",
+            "perProvider"
+          ],
+          "enumDescriptions": [
+            "One status bar item showing the tightest quota across all visible providers.",
+            "One status bar item per visible provider."
+          ],
+          "default": "combined",
+          "order": 2,
+          "markdownDescription": "How quotas are laid out in the status bar."
+        },
+        "onwatch.statusBar.visibility": {
+          "type": "string",
+          "enum": [
+            "always",
+            "whenAnyProviderNearLimit",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Always show the status bar item(s).",
+            "Show only when a visible provider is at warning or worse, or when the daemon is unreachable.",
+            "Never show anything in the status bar. Commands still work."
+          ],
+          "default": "always",
+          "order": 3,
+          "markdownDescription": "When the status bar item(s) are shown."
+        },
+        "onwatch.openIn": {
+          "type": "string",
+          "enum": [
+            "sidebar",
+            "simpleBrowser",
+            "externalBrowser"
+          ],
+          "enumDescriptions": [
+            "Show the quick view in the onWatch sidebar view (activity bar). The dashboard opens in Simple Browser.",
+            "Open the dashboard and quick view inside VS Code with Simple Browser (falls back to the external browser if unavailable).",
+            "Always open in the system browser."
+          ],
+          "default": "sidebar",
+          "order": 4,
+          "markdownDescription": "Where a status bar click, `onWatch: Open Quick View` and `onWatch: Open Dashboard` open. The quick view lives in the onWatch sidebar view by default; the full dashboard never fits a sidebar, so with `sidebar` it uses Simple Browser."
+        },
+        "onwatch.followDaemonSettings": {
+          "type": "boolean",
+          "default": true,
+          "order": 5,
+          "markdownDescription": "Use the daemon's menubar preferences (`Settings > Menubar` in the dashboard) for provider visibility, provider order, warning and critical thresholds, and refresh cadence. Any of `#onwatch.providers#`, `#onwatch.pollIntervalSeconds#`, `#onwatch.thresholds.warningPercent#` or `#onwatch.thresholds.criticalPercent#` overrides the daemon value only when you set it explicitly. When off, only the extension settings are used."
+        },
+        "onwatch.providers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "order": 6,
+          "markdownDescription": "Provider IDs to show, in order (for example `[\"anthropic\", \"codex\", \"copilot\"]`; profile-scoped IDs like `codex:work` are accepted). Empty means all providers the daemon reports as visible."
+        },
+        "onwatch.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "order": 7,
+          "markdownDescription": "How often to poll the daemon, in seconds (minimum 10). Used as a fallback only: when `#onwatch.followDaemonSettings#` is on, the daemon's `refresh_seconds` wins unless you set this explicitly."
+        },
+        "onwatch.thresholds.warningPercent": {
+          "type": "number",
+          "default": 70,
+          "minimum": 1,
+          "maximum": 100,
+          "order": 8,
+          "markdownDescription": "Percent used at which a quota turns to the warning color. Only used for the extension's own severity decisions when not following daemon settings (or when set explicitly); otherwise the daemon's computed status is trusted."
+        },
+        "onwatch.thresholds.criticalPercent": {
+          "type": "number",
+          "default": 90,
+          "minimum": 1,
+          "maximum": 100,
+          "order": 9,
+          "markdownDescription": "Percent used at which a quota turns to the critical color. Only used for the extension's own severity decisions when not following daemon settings (or when set explicitly); otherwise the daemon's computed status is trusted."
+        },
+        "onwatch.notify": {
+          "type": "string",
+          "enum": [
+            "off",
+            "critical",
+            "warningAndCritical"
+          ],
+          "enumDescriptions": [
+            "Never show notifications.",
+            "Show a notification when a quota enters the critical range.",
+            "Show a notification when a quota enters the warning or the critical range."
+          ],
+          "default": "critical",
+          "order": 10,
+          "markdownDescription": "Show a non-modal warning notification when a quota crosses a threshold. Fires once per provider, quota and reset window - never repeatedly while the quota stays there."
+        },
+        "onwatch.auth.username": {
+          "type": "string",
+          "default": "",
+          "order": 11,
+          "markdownDescription": "Username for HTTP Basic auth when the daemon has authentication enabled. The password is stored in VS Code's secret storage; set it with `onWatch: Set Daemon Credentials`. Not needed for a daemon on `127.0.0.1`."
+        }
+      }
+    },
+    "icons": {
+      "onwatch-all": {
+        "description": "onWatch All providers mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E001"
+        }
+      },
+      "onwatch-anthropic": {
+        "description": "onWatch Anthropic mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E002"
+        }
+      },
+      "onwatch-antigravity": {
+        "description": "onWatch Antigravity mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E003"
+        }
+      },
+      "onwatch-api-integrations": {
+        "description": "onWatch API Integrations mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E004"
+        }
+      },
+      "onwatch-copilot": {
+        "description": "onWatch GitHub Copilot mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E005"
+        }
+      },
+      "onwatch-cursor": {
+        "description": "onWatch Cursor mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E006"
+        }
+      },
+      "onwatch-deepseek": {
+        "description": "onWatch DeepSeek mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E007"
+        }
+      },
+      "onwatch-gemini": {
+        "description": "onWatch Gemini mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E008"
+        }
+      },
+      "onwatch-grok": {
+        "description": "onWatch Grok mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E009"
+        }
+      },
+      "onwatch-kimi": {
+        "description": "onWatch Kimi mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00A"
+        }
+      },
+      "onwatch-minimax": {
+        "description": "onWatch MiniMax mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00B"
+        }
+      },
+      "onwatch-moonshot": {
+        "description": "onWatch Moonshot mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00C"
+        }
+      },
+      "onwatch-ollama": {
+        "description": "onWatch ollama mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00D"
+        }
+      },
+      "onwatch-openai": {
+        "description": "onWatch OpenAI mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00E"
+        }
+      },
+      "onwatch-opencode": {
+        "description": "onWatch OpenCode mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E00F"
+        }
+      },
+      "onwatch-openrouter": {
+        "description": "onWatch OpenRouter mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E010"
+        }
+      },
+      "onwatch-synthetic": {
+        "description": "onWatch Synthetic mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E011"
+        }
+      },
+      "onwatch-zai": {
+        "description": "onWatch Z.ai mark",
+        "default": {
+          "fontPath": "./media/onwatch-icons.woff",
+          "fontCharacter": "\\E012"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "icons": "node scripts/build-icons.mjs",
+    "build": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "vsce package --no-dependencies",
+    "publish": "vsce publish --no-dependencies",
+    "publish:ovsx": "ovsx publish --no-dependencies",
+    "vscode:prepublish": "npm run build",
+    "version:sync": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.14.0",
+    "fantasticon": "4.1.0",
+    "oslllo-svg-fixer": "6.0.1",
+    "ovsx": "^0.10.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.13.0",
+    "vitest": "^2.1.0"
+  }
+}
